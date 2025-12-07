@@ -168,7 +168,6 @@ export class HTTPBridgeConnector {
     }, {
       maxAttempts: 3, // Retry up to 3 times
       initialDelay: 500,
-      maxDelay: 2000,
       onRetry: (attempt, error) => {
         logger.warn(`⏱️ Trade execution failed (attempt ${attempt}/3), retrying...`, error.message);
       }

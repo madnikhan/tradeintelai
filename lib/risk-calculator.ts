@@ -147,7 +147,7 @@ export class RiskCalculator {
     let drawdownAdjustment = 1.0;
     try {
       const { calculateAccountMetrics } = await import('./account-calculator');
-      const metrics = calculateAccountMetrics(allTrades, balance);
+      const metrics = calculateAccountMetrics(allTrades, []);
       
       // If account is in drawdown, reduce position sizes
       if (metrics.allTimeProfitLoss < 0) {

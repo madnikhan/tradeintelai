@@ -3,7 +3,7 @@
  * Uses GPT-5.1 to generate user-friendly, actionable error messages
  */
 
-import { isOpenAIConfigured, getOpenAIKey } from './openai-service';
+import { isOpenAIConfigured } from './openai-service';
 
 export interface EnhancedError {
   title: string;

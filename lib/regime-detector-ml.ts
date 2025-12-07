@@ -69,7 +69,7 @@ export class MLRegimeDetector {
       try {
         multiTimeframe = await this.analyzeMultiTimeframeRegime(symbol);
         // Boost confidence if timeframes are aligned
-        if (multiTimeframe.alignment === 'aligned') {
+        if (multiTimeframe && multiTimeframe.alignment === 'aligned') {
           classification.confidence = Math.min(100, classification.confidence * 1.15);
         }
       } catch (error) {

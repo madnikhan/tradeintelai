@@ -153,7 +153,7 @@ class SystemTester {
         if (vwap && typeof vwap.vwap === 'number') {
           this.addResult('VWAP Indicator', 'PASS', 'Volume-Weighted Average Price calculated', {
             vwap: vwap.vwap,
-            currentPrice: vwap.currentPrice,
+            currentPrice: (vwap as any).currentPrice,
             deviation: vwap.deviation
           });
         } else {

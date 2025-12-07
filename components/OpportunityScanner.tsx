@@ -1,0 +1,1062 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { aiTradingEngine } from '@/lib/ai-trading-engine';
+import { TRADING_RULES } from '@/config/trading-rules';
+import { TradingHoursFilter } from '@/lib/trading-hours';
+import { LoadingSkeleton } from '@/components/LoadingSkeleton';
+import { EmptyState } from '@/components/EmptyState';
+import { Tooltip } from '@/components/Tooltip';
+import { apiKeyManager, API_KEYS } from '@/config/api-keys';
+
+interface Opportunity {
+  symbol: string;
+  score: number;
+  confidence: number;
+  recommendation: string;
+  technicalScore: number;
+  fundamentalScore: number;
+  sentimentScore: number;
+  riskLevel: string;
+  strength: number; // Combined strength score
+}
+
+export function OpportunityScanner() {
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [tradingHours, setTradingHours] = useState(TradingHoursFilter.analyze());
+  const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
+  const [autoScanEnabled, setAutoScanEnabled] = useState(true);
+  const [scanCountdown, setScanCountdown] = useState(0);
+  const [notificationPermission, setNotificationPermission] = useState<'default' | 'granted' | 'denied' | 'unknown'>('unknown');
+  const [isClient, setIsClient] = useState(false);
+  const [activeAlert, setActiveAlert] = useState<Opportunity[] | null>(null);
+  const [alarmAcknowledged, setAlarmAcknowledged] = useState(false);
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const [alarmInterval, setAlarmInterval] = useState<NodeJS.Timeout | null>(null);
+  const [apiKeyIssues, setApiKeyIssues] = useState<{ finnhub: number; newsdata: number }>({ finnhub: 0, newsdata: 0 });
+  const [selectedPairs, setSelectedPairs] = useState<string[]>([]);
+  const [showPairSelector, setShowPairSelector] = useState(false);
+  const [showApiKeyDiagnostics, setShowApiKeyDiagnostics] = useState(false);
+  const [testingKeys, setTestingKeys] = useState(false);
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; status?: number; error?: string }>>({});
+
+  // FIXED: Lowered thresholds to be more realistic based on audit findings
+  // The scoring system is conservative, so 65+ score with 55%+ confidence is still strong
+  const MIN_SCORE = 65;  // Lowered from 70
+  const MIN_CONFIDENCE = 55;  // Lowered from 60
+
+  // Preset pair groups
+  const MAJOR_PAIRS = [
+    'EUR/USD',
+    'GBP/USD',
+    'USD/JPY',
+    'USD/CHF',
+    'AUD/USD',
+    'USD/CAD',
+    'NZD/USD',
+  ];
+
+  const ALL_PAIRS = TRADING_RULES.TRADING_PAIRS;
+
+  // Load selected pairs from localStorage on mount
+  useEffect(() => {
+    if (isClient) {
+      const saved = localStorage.getItem('opportunityScanner_selectedPairs');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSelectedPairs(parsed);
+          } else {
+            // Default to major pairs if nothing saved
+            setSelectedPairs(MAJOR_PAIRS);
+            localStorage.setItem('opportunityScanner_selectedPairs', JSON.stringify(MAJOR_PAIRS));
+          }
+        } catch (e) {
+          setSelectedPairs(MAJOR_PAIRS);
+          localStorage.setItem('opportunityScanner_selectedPairs', JSON.stringify(MAJOR_PAIRS));
+        }
+      } else {
+        // Default to major pairs
+        setSelectedPairs(MAJOR_PAIRS);
+        localStorage.setItem('opportunityScanner_selectedPairs', JSON.stringify(MAJOR_PAIRS));
+      }
+    }
+  }, [isClient]);
+
+  // Save selected pairs to localStorage when they change
+  useEffect(() => {
+    if (isClient && selectedPairs.length > 0) {
+      localStorage.setItem('opportunityScanner_selectedPairs', JSON.stringify(selectedPairs));
+    }
+  }, [selectedPairs, isClient]);
+
+  const scanAllPairs = async () => {
+    if (isScanning) return; // Prevent multiple simultaneous scans
+    setIsScanning(true);
+    setScanProgress(0);
+    const results: Opportunity[] = [];
+    // Use selected pairs, or fallback to all pairs if none selected
+    const pairs = selectedPairs.length > 0 ? selectedPairs : TRADING_RULES.TRADING_PAIRS;
+    const total = pairs.length;
+
+    for (let i = 0; i < pairs.length; i++) {
+      const pair = pairs[i];
+      try {
+        const symbol = pair.replace('/', ''); // Convert EUR/USD to EURUSD
+        const analysis = await aiTradingEngine.analyzeMarket(symbol, []);
+        
+        const strength = analysis.overallScore * (analysis.confidence / 100);
+        
+        results.push({
+          symbol: pair,
+          score: analysis.overallScore,
+          confidence: analysis.confidence,
+          recommendation: analysis.recommendation,
+          technicalScore: analysis.technicalScore,
+          fundamentalScore: analysis.fundamentalScore,
+          sentimentScore: analysis.sentimentScore,
+          riskLevel: analysis.riskLevel,
+          strength: strength,
+        });
+        
+        setScanProgress(Math.round(((i + 1) / total) * 100));
+        
+        // Increased delay to avoid rate limits (1 second between pairs)
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.error(`Error analyzing ${pair}:`, error);
+        setScanProgress(Math.round(((i + 1) / total) * 100));
+      }
+    }
+
+    // Sort by strength (score * confidence)
+    results.sort((a, b) => b.strength - a.strength);
+    setOpportunities(results);
+    setIsScanning(false);
+    setLastScanTime(new Date());
+    setTradingHours(TradingHoursFilter.analyze());
+    
+    // Check if we found strong signals and show notification
+    const strongSignals = results.filter(opp => 
+      opp.score >= MIN_SCORE && 
+      opp.confidence >= MIN_CONFIDENCE &&
+      opp.recommendation !== 'HOLD'
+    );
+    
+    if (typeof window !== 'undefined') {
+      console.log('🔔 Notification check:', {
+        strongSignalsCount: strongSignals.length,
+        hasNotificationAPI: 'Notification' in window,
+        permission: 'Notification' in window ? Notification.permission : 'N/A',
+        topSignal: strongSignals.length > 0 ? {
+          symbol: strongSignals[0].symbol,
+          score: strongSignals[0].score,
+          confidence: strongSignals[0].confidence
+        } : null
+      });
+    }
+    
+    // Trigger alert system for strong signals
+    if (strongSignals.length > 0) {
+      // Set active alert (will trigger sound and persistent banner)
+      setActiveAlert(strongSignals);
+      setAlarmAcknowledged(false);
+      
+      // Send browser notification
+      if (typeof window !== 'undefined') {
+        if ('Notification' in window) {
+          if (Notification.permission === 'granted') {
+            try {
+              const notification = new Notification(`🎯 ${strongSignals.length} Strong Signal${strongSignals.length > 1 ? 's' : ''} Found!`, {
+                body: `Top opportunity: ${strongSignals[0].symbol} - ${strongSignals[0].recommendation} (Score: ${strongSignals[0].score}, Confidence: ${strongSignals[0].confidence}%)`,
+                icon: '/logo.png',
+                tag: 'trading-signal',
+                requireInteraction: true, // Changed to true for better visibility
+              });
+              console.log('✅ Notification sent:', notification);
+              setNotificationPermission('granted');
+            } catch (error) {
+              console.error('❌ Error creating notification:', error);
+            }
+          } else if (Notification.permission === 'default') {
+            console.log('⚠️ Notification permission not yet requested');
+            setNotificationPermission('default');
+          } else {
+            console.log('❌ Notification permission denied');
+            setNotificationPermission('denied');
+          }
+        } else {
+          console.log('❌ Browser does not support notifications');
+        }
+      }
+    } else {
+      // No strong signals - clear any active alerts
+      setActiveAlert(null);
+      setAlarmAcknowledged(false);
+      console.log('ℹ️ No strong signals found, no notification sent');
+    }
+  };
+  
+  // Check if we're on the client side
+  useEffect(() => {
+    setIsClient(true);
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotificationPermission(Notification.permission);
+    }
+    
+    // Initialize audio context for alarm sounds
+    if (typeof window !== 'undefined' && typeof AudioContext !== 'undefined') {
+      const ctx = new AudioContext();
+      setAudioContext(ctx);
+    }
+    
+    return () => {
+      // Cleanup: stop any playing alarms
+      if (alarmInterval) {
+        clearInterval(alarmInterval);
+      }
+    };
+  }, []);
+  
+  // Play continuous alarm sound when strong signals are found
+  useEffect(() => {
+    if (!isClient) return;
+    
+    // Cleanup function
+    return () => {
+      if (alarmInterval) {
+        clearInterval(alarmInterval);
+        setAlarmInterval(null);
+      }
+    };
+  }, [isClient]);
+  
+  useEffect(() => {
+    if (!isClient) return;
+    
+    // Stop any existing alarm
+    if (alarmInterval) {
+      clearInterval(alarmInterval);
+      setAlarmInterval(null);
+    }
+    
+    if (activeAlert && activeAlert.length > 0 && !alarmAcknowledged) {
+      // Play alarm sound continuously
+      const playAlarm = () => {
+        try {
+          // Try Web Audio API first
+          if (audioContext && audioContext.state !== 'closed') {
+            // Resume audio context if suspended (browser requires user interaction)
+            if (audioContext.state === 'suspended') {
+              audioContext.resume().catch(err => {
+                console.warn('Could not resume audio context:', err);
+              });
+            }
+            
+            // Create a beep sound using Web Audio API
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = 800; // Higher pitch for urgency
+            oscillator.type = 'sine';
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.3);
+          } else {
+            // Fallback: Just log the alert
+            console.log('🔔 ALARM: Strong signal detected!');
+          }
+        } catch (error) {
+          console.error('Error playing alarm:', error);
+          // Fallback: Just log the alert
+          console.log('🔔 ALARM: Strong signal detected!');
+        }
+      };
+      
+      // Play alarm immediately
+      playAlarm();
+      
+      // Play alarm every 2 seconds
+      const interval = setInterval(() => {
+        playAlarm();
+      }, 2000);
+      
+      setAlarmInterval(interval);
+      
+      return () => {
+        clearInterval(interval);
+      };
+    }
+  }, [activeAlert, alarmAcknowledged, isClient, audioContext]);
+  
+  // Handle acknowledge button
+  const acknowledgeAlert = () => {
+    setAlarmAcknowledged(true);
+    if (alarmInterval) {
+      clearInterval(alarmInterval);
+      setAlarmInterval(null);
+    }
+    console.log('✅ Alert acknowledged - alarm stopped');
+  };
+
+  // Auto-scan functionality
+  useEffect(() => {
+    if (!autoScanEnabled || !isClient) {
+      setScanCountdown(0);
+      return;
+    }
+    
+    // Request notification permission on first load
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        console.log('🔔 Requesting notification permission...');
+        Notification.requestPermission().then(permission => {
+          console.log('🔔 Notification permission:', permission);
+          setNotificationPermission(permission);
+          if (permission === 'granted') {
+            // Test notification
+            try {
+              new Notification('🎯 TradeIntel AI', {
+                body: 'Notifications enabled! You will be alerted when strong signals are found.',
+                icon: '/logo.png',
+                tag: 'permission-granted',
+              });
+            } catch (error) {
+              console.error('Error sending test notification:', error);
+            }
+          }
+        }).catch(error => {
+          console.error('Error requesting notification permission:', error);
+        });
+      } else {
+        console.log('🔔 Notification permission status:', Notification.permission);
+        setNotificationPermission(Notification.permission);
+      }
+    } else {
+      console.log('❌ Browser does not support notifications');
+    }
+    
+    // Determine scan interval based on trading hours and selected pairs
+    const getScanInterval = () => {
+      // If using selected pairs (fewer than all pairs), use 5-minute intervals
+      const usingSelectedPairs = selectedPairs.length > 0 && selectedPairs.length < ALL_PAIRS.length;
+      
+      if (usingSelectedPairs) {
+        return 5 * 60 * 1000; // 5 minutes for selected pairs
+      }
+      
+      const hours = TradingHoursFilter.analyze();
+      if (hours.quality === 'PRIME') {
+        return 5 * 60 * 1000; // 5 minutes during PRIME time
+      } else if (hours.quality === 'GOOD') {
+        return 10 * 60 * 1000; // 10 minutes during GOOD time
+      } else {
+        return 15 * 60 * 1000; // 15 minutes during AVERAGE/POOR time
+      }
+    };
+    
+    // Initial scan on mount (only if no opportunities yet)
+    if (opportunities.length === 0 && !isScanning) {
+      scanAllPairs();
+    }
+    
+    const interval = getScanInterval();
+    
+    // Countdown timer
+    const countdownInterval = setInterval(() => {
+      setScanCountdown(prev => {
+        if (prev <= 1) {
+          if (!isScanning) {
+            scanAllPairs();
+          }
+          const newInterval = getScanInterval();
+          return newInterval / 1000;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    
+    // Auto-scan interval
+    const scanInterval = setInterval(() => {
+      if (!isScanning) {
+        scanAllPairs();
+      }
+    }, interval);
+    
+    // Initialize countdown
+    setScanCountdown(interval / 1000);
+    
+    // Check API key failures periodically
+    const checkApiKeys = () => {
+      const finnhubFailures = apiKeyManager.getFailureCount('FINNHUB');
+      const newsdataFailures = apiKeyManager.getFailureCount('NEWSDATA');
+      setApiKeyIssues({ finnhub: finnhubFailures, newsdata: newsdataFailures });
+    };
+    
+    const apiKeyCheckInterval = setInterval(checkApiKeys, 30000); // Check every 30 seconds
+    checkApiKeys(); // Initial check
+    
+    return () => {
+      clearInterval(scanInterval);
+      clearInterval(countdownInterval);
+      clearInterval(apiKeyCheckInterval);
+    };
+  }, [autoScanEnabled, selectedPairs]);
+
+  const validOpportunities = opportunities.filter(opp => 
+    opp.score >= MIN_SCORE && 
+    opp.confidence >= MIN_CONFIDENCE &&
+    opp.recommendation !== 'HOLD'
+  );
+
+  const bestOpportunity = validOpportunities[0];
+  
+  // Show alert banner when strong signals are found
+  const hasStrongSignals = validOpportunities.length > 0;
+
+  return (
+    <div className="bg-[#0d1321] rounded-xl border border-[#1e2738] p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-2xl font-bold text-white mb-1">🎯 Opportunity Scanner</h2>
+          <p className="text-sm text-gray-400">
+            {autoScanEnabled ? (
+              <>
+                Auto-scanning {selectedPairs.length > 0 ? `${selectedPairs.length} selected pair${selectedPairs.length > 1 ? 's' : ''}` : 'all pairs'} every {
+                  selectedPairs.length > 0 && selectedPairs.length < ALL_PAIRS.length ? '5' :
+                  tradingHours.quality === 'PRIME' ? '5' : tradingHours.quality === 'GOOD' ? '10' : '15'
+                } minutes
+                {scanCountdown > 0 && (
+                  <span className="ml-2 text-cyan-400">• Next scan in {Math.floor(scanCountdown / 60)}:{(scanCountdown % 60).toString().padStart(2, '0')}</span>
+                )}
+              </>
+            ) : (
+              `Scanning ${selectedPairs.length > 0 ? `${selectedPairs.length} selected pair${selectedPairs.length > 1 ? 's' : ''}` : 'all pairs'} for opportunities`
+            )}
+            {lastScanTime && (
+              <span className="block text-xs text-gray-500 mt-1">
+                Last scan: {lastScanTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Notification Permission Button */}
+          {isClient && typeof window !== 'undefined' && 'Notification' in window && notificationPermission !== 'granted' && (
+            <button
+              onClick={async () => {
+                if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+                  const permission = await Notification.requestPermission();
+                  console.log('🔔 Permission result:', permission);
+                  setNotificationPermission(permission);
+                  if (permission === 'granted') {
+                    // Test notification
+                    new Notification('🎯 TradeIntel AI', {
+                      body: 'Notifications enabled! You will be alerted when strong signals are found.',
+                      icon: '/logo.png',
+                      tag: 'permission-granted',
+                    });
+                  }
+                }
+              }}
+              className="px-3 py-2 rounded-lg text-xs font-medium bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-all"
+              title="Enable browser notifications"
+            >
+              🔔 Enable Notifications
+            </button>
+          )}
+          {isClient && typeof window !== 'undefined' && 'Notification' in window && notificationPermission === 'granted' && (
+            <div className="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" title="Notifications enabled">
+              ✅ Notifications On
+            </div>
+          )}
+          <button
+            onClick={() => setShowPairSelector(!showPairSelector)}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 transition-all"
+            title="Select currency pairs to scan"
+          >
+            📊 {selectedPairs.length > 0 ? `${selectedPairs.length} Pairs` : 'Select Pairs'}
+          </button>
+          <button
+            onClick={() => setAutoScanEnabled(!autoScanEnabled)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              autoScanEnabled
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : 'bg-gray-700 text-gray-400 border border-gray-600'
+            }`}
+            title={autoScanEnabled ? 'Auto-scan enabled' : 'Auto-scan disabled'}
+          >
+            {autoScanEnabled ? '⏸️ Auto' : '▶️ Manual'}
+          </button>
+          <button
+            onClick={scanAllPairs}
+            disabled={isScanning}
+            className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg font-medium hover:from-cyan-600 hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {isScanning ? (
+              <>
+                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Scanning... {scanProgress}%
+              </>
+            ) : (
+              <>
+                <span>🔍 Scan Now</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* CURRENCY PAIR SELECTOR */}
+      {showPairSelector && (
+        <div className="mb-4 bg-[#141c2b] border border-[#1e2738] rounded-xl p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-white font-bold text-lg">Select Currency Pairs to Scan</h3>
+            <button
+              onClick={() => setShowPairSelector(false)}
+              className="text-gray-400 hover:text-white transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+          
+          {/* Preset Buttons */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button
+              onClick={() => {
+                setSelectedPairs(MAJOR_PAIRS);
+              }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                JSON.stringify(selectedPairs.sort()) === JSON.stringify(MAJOR_PAIRS.sort())
+                  ? 'bg-cyan-500 text-white'
+                  : 'bg-[#1e2738] text-gray-300 hover:bg-[#2a3441]'
+              }`}
+            >
+              ⭐ Major Pairs ({MAJOR_PAIRS.length})
+            </button>
+            <button
+              onClick={() => {
+                 setSelectedPairs([...ALL_PAIRS]);
+              }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                JSON.stringify([...selectedPairs].sort()) === JSON.stringify([...ALL_PAIRS].sort())
+                  ? 'bg-cyan-500 text-white'
+                  : 'bg-[#1e2738] text-gray-300 hover:bg-[#2a3441]'
+              }`}
+            >
+              🌐 All Pairs ({ALL_PAIRS.length})
+            </button>
+            <button
+              onClick={() => {
+                setSelectedPairs([]);
+              }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                selectedPairs.length === 0
+                  ? 'bg-cyan-500 text-white'
+                  : 'bg-[#1e2738] text-gray-300 hover:bg-[#2a3441]'
+              }`}
+            >
+              🎯 Custom ({selectedPairs.length})
+            </button>
+          </div>
+
+          {/* Pair Selection Grid */}
+          <div className="max-h-64 overflow-y-auto border border-[#1e2738] rounded-lg p-3 bg-[#0d1321]">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+              {ALL_PAIRS.map((pair) => {
+                const isSelected = selectedPairs.includes(pair);
+                const isMajor = MAJOR_PAIRS.includes(pair);
+                return (
+                  <label
+                    key={pair}
+                    className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-cyan-500/20 border border-cyan-500/50'
+                        : 'bg-[#1e2738] border border-transparent hover:border-[#2a3441]'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedPairs([...selectedPairs, pair]);
+                        } else {
+                          setSelectedPairs(selectedPairs.filter(p => p !== pair));
+                        }
+                      }}
+                      className="w-4 h-4 text-cyan-500 bg-[#0d1321] border-gray-600 rounded focus:ring-cyan-500"
+                    />
+                    <span className={`text-sm ${isSelected ? 'text-cyan-400 font-medium' : 'text-gray-400'}`}>
+                      {pair}
+                      {isMajor && <span className="ml-1 text-xs">⭐</span>}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Info */}
+          <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+            <p className="text-xs text-blue-300">
+              <strong>💡 Tip:</strong> Selecting fewer pairs (e.g., Major Pairs only) allows faster 5-minute scans while staying within API rate limits. 
+              {selectedPairs.length > 0 && selectedPairs.length < ALL_PAIRS.length && (
+                <span className="block mt-1 text-green-400">
+                  ✅ {selectedPairs.length} pairs selected - Using 5-minute scan intervals
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* API KEY WARNING BANNER */}
+      {(apiKeyIssues.finnhub > 0 || apiKeyIssues.newsdata > 0) && (
+        <div className="mb-4 bg-amber-500/20 border border-amber-500/30 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <div className="text-2xl">⚠️</div>
+            <div className="flex-1">
+              <h3 className="text-amber-400 font-bold mb-1">API Key Issues Detected</h3>
+              <p className="text-sm text-gray-300 mb-2">
+                Some external data providers are failing, which may reduce signal quality:
+              </p>
+              <ul className="text-sm text-gray-400 space-y-1 mb-3">
+                {apiKeyIssues.finnhub > 0 && (
+                  <li>• Finnhub.io: {apiKeyIssues.finnhub} failure{apiKeyIssues.finnhub > 1 ? 's' : ''} (Economic calendar data unavailable)</li>
+                )}
+                {apiKeyIssues.newsdata > 0 && (
+                  <li>• NewsData.io: {apiKeyIssues.newsdata} failure{apiKeyIssues.newsdata > 1 ? 's' : ''} (News sentiment data unavailable)</li>
+                )}
+              </ul>
+              <p className="text-xs text-gray-500 mb-3">
+                <strong>Impact:</strong> The AI will rely more heavily on technical analysis. Strong signals may be less frequent without fundamental and sentiment data.
+                <br />
+                <strong>Fix:</strong> Check your API keys in <code className="bg-black/30 px-1 rounded">config/api-keys.ts</code> or reduce scan frequency to avoid rate limits.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    apiKeyManager.clearFailures('FINNHUB');
+                    apiKeyManager.clearFailures('NEWSDATA');
+                    setApiKeyIssues({ finnhub: 0, newsdata: 0 });
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-500/30 transition-all"
+                >
+                  🔄 Clear Failure Counts
+                </button>
+                <button
+                  onClick={() => setShowApiKeyDiagnostics(!showApiKeyDiagnostics)}
+                  className="px-3 py-1.5 text-xs font-medium bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/30 transition-all"
+                >
+                  🔍 Test API Keys
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* API KEY DIAGNOSTICS */}
+      {showApiKeyDiagnostics && (
+        <div className="mb-4 bg-[#141c2b] border border-[#1e2738] rounded-xl p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-white font-bold text-lg">API Key Diagnostics</h3>
+            <button
+              onClick={() => setShowApiKeyDiagnostics(false)}
+              className="text-gray-400 hover:text-white transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {/* Finnhub Keys */}
+            <div>
+              <h4 className="text-white font-medium mb-2">Finnhub.io Keys</h4>
+              <div className="space-y-2">
+                {API_KEYS.FINNHUB.map((key, index) => {
+                  const maskedKey = `${key.substring(0, 8)}...${key.substring(key.length - 4)}`;
+                  const result = testResults[`FINNHUB_${index}`];
+                  return (
+                    <div key={index} className="flex items-center justify-between p-2 bg-[#0d1321] rounded-lg border border-[#1e2738]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-400">Key {index + 1}:</span>
+                        <code className="text-xs text-gray-500">{maskedKey}</code>
+                        {result && (
+                          <span className={`text-xs px-2 py-0.5 rounded ${
+                            result.success 
+                              ? 'bg-green-500/20 text-green-400' 
+                              : result.status === 403
+                              ? 'bg-red-500/20 text-red-400'
+                              : result.status === 429
+                              ? 'bg-yellow-500/20 text-yellow-400'
+                              : 'bg-gray-500/20 text-gray-400'
+                          }`}>
+                            {result.success 
+                              ? '✅ Valid' 
+                              : result.status === 403
+                              ? '❌ Invalid/Expired'
+                              : result.status === 429
+                              ? '⚠️ Rate Limited'
+                              : `❌ Error: ${result.error || result.status}`
+                            }
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setTestingKeys(true);
+                          const result = await apiKeyManager.testKey('FINNHUB', key);
+                          setTestResults(prev => ({ ...prev, [`FINNHUB_${index}`]: result }));
+                          setTestingKeys(false);
+                        }}
+                        disabled={testingKeys}
+                        className="px-3 py-1 text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-500/30 transition-all disabled:opacity-50"
+                      >
+                        Test
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* NewsData Keys */}
+            <div>
+              <h4 className="text-white font-medium mb-2">NewsData.io Keys</h4>
+              <div className="space-y-2">
+                {API_KEYS.NEWSDATA.map((key, index) => {
+                  const maskedKey = `${key.substring(0, 8)}...${key.substring(key.length - 4)}`;
+                  const result = testResults[`NEWSDATA_${index}`];
+                  return (
+                    <div key={index} className="flex items-center justify-between p-2 bg-[#0d1321] rounded-lg border border-[#1e2738]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-400">Key {index + 1}:</span>
+                        <code className="text-xs text-gray-500">{maskedKey}</code>
+                        {result && (
+                          <span className={`text-xs px-2 py-0.5 rounded ${
+                            result.success 
+                              ? 'bg-green-500/20 text-green-400' 
+                              : result.status === 403
+                              ? 'bg-red-500/20 text-red-400'
+                              : result.status === 429
+                              ? 'bg-yellow-500/20 text-yellow-400'
+                              : 'bg-gray-500/20 text-gray-400'
+                          }`}>
+                            {result.success 
+                              ? '✅ Valid' 
+                              : result.status === 403
+                              ? '❌ Invalid/Expired'
+                              : result.status === 429
+                              ? '⚠️ Rate Limited'
+                              : `❌ Error: ${result.error || result.status}`
+                            }
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setTestingKeys(true);
+                          const result = await apiKeyManager.testKey('NEWSDATA', key);
+                          setTestResults(prev => ({ ...prev, [`NEWSDATA_${index}`]: result }));
+                          setTestingKeys(false);
+                        }}
+                        disabled={testingKeys}
+                        className="px-3 py-1 text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-500/30 transition-all disabled:opacity-50"
+                      >
+                        Test
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Instructions */}
+            <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+              <p className="text-xs text-blue-300 mb-2">
+                <strong>How to Fix:</strong>
+              </p>
+              <ul className="text-xs text-blue-300 space-y-1 list-disc list-inside">
+                <li><strong>403 Forbidden:</strong> API key is invalid or expired. Get a new key from the provider&apos;s website.</li>
+                <li><strong>429 Rate Limited:</strong> Too many requests. Wait or upgrade your API plan.</li>
+                <li>Update keys in <code className="bg-black/30 px-1 rounded">config/api-keys.ts</code> and restart the dev server.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* URGENT ALERT BANNER - Persistent with sound until acknowledged */}
+      {activeAlert && activeAlert.length > 0 && !alarmAcknowledged && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-red-600 via-orange-500 to-red-600 border-b-4 border-yellow-400 shadow-2xl animate-pulse">
+          <div className="max-w-7xl mx-auto px-4 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4 flex-1">
+                <div className="text-4xl animate-bounce">🚨</div>
+                <div className="flex-1">
+                  <h2 className="text-white font-bold text-xl mb-1">
+                    🎯 URGENT: {activeAlert.length} Strong Trading Signal{activeAlert.length > 1 ? 's' : ''} Found!
+                  </h2>
+                  <p className="text-white/90 text-sm">
+                    <span className="font-bold">{activeAlert[0].symbol}</span> - {activeAlert[0].recommendation} 
+                    {' '}(Score: {activeAlert[0].score}, Confidence: {activeAlert[0].confidence}%)
+                    {activeAlert.length > 1 && ` + ${activeAlert.length - 1} more`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={acknowledgeAlert}
+                className="px-6 py-3 bg-white text-red-600 font-bold rounded-lg hover:bg-gray-100 transition-all shadow-lg flex items-center gap-2 min-w-[140px] justify-center"
+              >
+                <span>✓</span>
+                <span>Acknowledge</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Strong Signals Found Banner */}
+      {hasStrongSignals && (
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 mb-6 animate-pulse">
+          <div className="flex items-center gap-3">
+            <div className="text-2xl">🎯</div>
+            <div className="flex-1">
+              <h3 className="text-emerald-400 font-bold text-lg">
+                {validOpportunities.length} Strong Signal{validOpportunities.length > 1 ? 's' : ''} Found!
+              </h3>
+              <p className="text-sm text-gray-400 mt-1">
+                Top opportunity: <span className="text-emerald-400 font-bold">{bestOpportunity.symbol}</span> - {bestOpportunity.recommendation} 
+                (Score: {bestOpportunity.score}, Confidence: {bestOpportunity.confidence}%)
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Warning Banner */}
+      {!hasStrongSignals && opportunities.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-6">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">⚠️</span>
+            <div>
+              <h3 className="text-amber-400 font-bold mb-2">No Strong Signals Found</h3>
+              <p className="text-sm text-gray-400 mb-2">
+                Scanner is running automatically. When strong signals (65+ score, 55%+ confidence) appear, you&apos;ll see them highlighted above.
+              </p>
+              <ul className="text-sm text-gray-400 space-y-1 list-disc list-inside">
+                <li>Only trade when you have a STRONG signal (65+ score, 55%+ confidence)</li>
+                <li>Wait for the right setup - patience is key</li>
+                <li>Don&apos;t force trades - quality over quantity</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trading Hours Status */}
+      <div className={`mb-6 p-4 rounded-lg ${
+        tradingHours.quality === 'PRIME' ? 'bg-green-500/10 border border-green-500/30' :
+        tradingHours.quality === 'GOOD' ? 'bg-cyan-500/10 border border-cyan-500/30' :
+        tradingHours.quality === 'AVERAGE' ? 'bg-yellow-500/10 border border-yellow-500/30' :
+        'bg-red-500/10 border border-red-500/30'
+      }`}>
+        <div className="flex items-center gap-2 mb-2">
+          <span className={`w-2 h-2 rounded-full ${
+            tradingHours.quality === 'PRIME' ? 'bg-green-400' :
+            tradingHours.quality === 'GOOD' ? 'bg-cyan-400' :
+            tradingHours.quality === 'AVERAGE' ? 'bg-yellow-400' :
+            'bg-red-400'
+          }`}></span>
+          <span className="font-medium text-white">Current Session: {tradingHours.currentSession}</span>
+          <span className={`text-xs px-2 py-1 rounded ${
+            tradingHours.quality === 'PRIME' ? 'bg-green-500/20 text-green-400' :
+            tradingHours.quality === 'GOOD' ? 'bg-cyan-500/20 text-cyan-400' :
+            tradingHours.quality === 'AVERAGE' ? 'bg-yellow-500/20 text-yellow-400' :
+            'bg-red-500/20 text-red-400'
+          }`}>
+            {tradingHours.quality}
+          </span>
+        </div>
+        <p className="text-sm text-gray-400">{tradingHours.recommendation}</p>
+      </div>
+
+      {/* Best Opportunity */}
+      {bestOpportunity && (
+        <div className="mb-6 p-6 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/30 rounded-xl">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xl font-bold text-white mb-1">🏆 Top Opportunity</h3>
+              <p className="text-sm text-gray-400">Strongest signal found</p>
+            </div>
+            <div className={`px-4 py-2 rounded-lg font-bold text-lg ${
+              bestOpportunity.recommendation.includes('BUY') 
+                ? 'bg-green-500/20 text-green-400' 
+                : 'bg-red-500/20 text-red-400'
+            }`}>
+              {bestOpportunity.recommendation}
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Pair</p>
+              <p className="text-lg font-bold text-white">{bestOpportunity.symbol}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Score</p>
+              <p className="text-lg font-bold text-cyan-400">{bestOpportunity.score}/100</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Confidence</p>
+              <p className="text-lg font-bold text-cyan-400">{bestOpportunity.confidence}%</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Strength</p>
+              <p className="text-lg font-bold text-cyan-400">{bestOpportunity.strength.toFixed(1)}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div>
+              <p className="text-gray-500 mb-1">Technical</p>
+              <p className="text-white font-medium">{bestOpportunity.technicalScore}/100</p>
+            </div>
+            <div>
+              <p className="text-gray-500 mb-1">Fundamental</p>
+              <p className="text-white font-medium">{bestOpportunity.fundamentalScore}/100</p>
+            </div>
+            <div>
+              <p className="text-gray-500 mb-1">Sentiment</p>
+              <p className="text-white font-medium">{bestOpportunity.sentimentScore}/100</p>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-[#1e2738]">
+            <p className="text-xs text-gray-500 mb-2">⚠️ Remember: This is the BEST opportunity, but still:</p>
+            <ul className="text-xs text-gray-400 space-y-1">
+              <li>• Only risk 2% of your account ($1.91 on $95.55 balance)</li>
+              <li>• Ensure stop loss and take profit are properly set</li>
+              <li>• Trade objectively, not emotionally</li>
+              <li>• This is NOT about recovering losses - it&apos;s about the next quality trade</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* All Opportunities Table */}
+      {opportunities.length > 0 && (
+        <div>
+          <h3 className="text-lg font-bold text-white mb-4">
+            All Opportunities ({validOpportunities.length} strong, {opportunities.length - validOpportunities.length} weak)
+          </h3>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#1e2738]">
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Pair</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Signal</th>
+                  <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Score</th>
+                  <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Confidence</th>
+                  <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Strength</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Risk</th>
+                </tr>
+              </thead>
+              <tbody>
+                {opportunities.map((opp, index) => {
+                  const isValid = opp.score >= MIN_SCORE && opp.confidence >= MIN_CONFIDENCE && opp.recommendation !== 'HOLD';
+                  return (
+                    <tr 
+                      key={opp.symbol} 
+                      className={`border-b border-[#1e2738] hover:bg-[#141c2b] transition-colors ${
+                        isValid ? 'bg-green-500/5' : ''
+                      }`}
+                    >
+                      <td className="py-3 px-4">
+                        <span className="font-medium text-white">{opp.symbol}</span>
+                        {index === 0 && isValid && (
+                          <span className="ml-2 text-xs bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded">BEST</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          opp.recommendation.includes('BUY') 
+                            ? 'bg-green-500/20 text-green-400' 
+                            : opp.recommendation.includes('SELL')
+                            ? 'bg-red-500/20 text-red-400'
+                            : 'bg-yellow-500/20 text-yellow-400'
+                        }`}>
+                          {opp.recommendation}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className={`font-medium ${
+                          opp.score >= MIN_SCORE ? 'text-cyan-400' : 'text-gray-500'
+                        }`}>
+                          {opp.score}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className={`font-medium ${
+                          opp.confidence >= MIN_CONFIDENCE ? 'text-cyan-400' : 'text-gray-500'
+                        }`}>
+                          {opp.confidence}%
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className="font-medium text-white">{opp.strength.toFixed(1)}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          opp.riskLevel === 'LOW' ? 'bg-green-500/20 text-green-400' :
+                          opp.riskLevel === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
+                          'bg-red-500/20 text-red-400'
+                        }`}>
+                          {opp.riskLevel}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {isScanning ? (
+        <div className="space-y-4">
+          <LoadingSkeleton type="card" />
+          <LoadingSkeleton type="card" />
+          <LoadingSkeleton type="card" />
+        </div>
+      ) : opportunities.length === 0 ? (
+        <EmptyState
+          icon="🔍"
+          title="No Opportunities Found"
+          description={`Click "Scan All Pairs" to analyze all ${TRADING_RULES.TRADING_PAIRS.length} currency pairs and find strong trading signals (65+ score, 55%+ confidence).`}
+          action={{
+            label: '🔍 Scan All Pairs',
+            onClick: scanAllPairs,
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+

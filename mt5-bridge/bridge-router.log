@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/Users/muhammadmadni/trading/tradeintelai/mt5-bridge/bridge-router.py", line 70, in <module>
+    class RouterHTTPHandler(BaseHTTPRequestHandler):
+  File "/Users/muhammadmadni/trading/tradeintelai/mt5-bridge/bridge-router.py", line 73, in RouterHTTPHandler
+    router: Optional[BridgeRouter] = None
+            ^^^^^^^^
+NameError: name 'Optional' is not defined

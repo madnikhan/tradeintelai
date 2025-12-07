@@ -254,7 +254,7 @@ Risk: ${analysis.detailedReasoning.risk.join('; ')}
 
 ${analysis.cotAnalysis ? `
 **COT Analysis:**
-${analysis.cotAnalysis.summary}
+${analysis.cotAnalysis.reasoning || 'COT data analyzed'}
 ` : ''}
 
 ${analysis.regimeAnalysis ? `

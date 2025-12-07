@@ -3,10 +3,8 @@
  * Provides historical price data and real-time forex quotes
  */
 
-import { apiKeyManager } from '@/config/api-keys';
 import { PriceData } from '@/types/trading';
-
-const BASE_URL = 'https://api.twelvedata.com';
+import { callProxyAPI } from '@/lib/api-proxy-client';
 
 interface TwelveDataQuote {
   symbol: string;
@@ -51,12 +49,11 @@ export class TwelveDataProvider {
     timestamp: Date;
   } | null> {
     try {
-      const apiKey = apiKeyManager.getKey('TWELVE_DATA');
       const forexSymbol = symbol.includes('/') ? symbol : `${symbol.slice(0, 3)}/${symbol.slice(3)}`;
       
-      const response = await fetch(
-        `${BASE_URL}/quote?symbol=${forexSymbol}&apikey=${apiKey}`
-      );
+      const response = await callProxyAPI('twelve-data', 'quote', {
+        symbol: forexSymbol,
+      });
       
       if (!response.ok) {
         console.error('TwelveData quote error:', response.status);
@@ -101,12 +98,13 @@ export class TwelveDataProvider {
     }
     
     try {
-      const apiKey = apiKeyManager.getKey('TWELVE_DATA');
       const forexSymbol = symbol.includes('/') ? symbol : `${symbol.slice(0, 3)}/${symbol.slice(3)}`;
       
-      const response = await fetch(
-        `${BASE_URL}/time_series?symbol=${forexSymbol}&interval=${interval}&outputsize=${outputSize}&apikey=${apiKey}`
-      );
+      const response = await callProxyAPI('twelve-data', 'time_series', {
+        symbol: forexSymbol,
+        interval,
+        outputsize: outputSize.toString(),
+      });
       
       if (!response.ok) {
         console.error('TwelveData historical error:', response.status);
@@ -147,14 +145,13 @@ export class TwelveDataProvider {
     const quotes = new Map<string, number>();
     
     try {
-      const apiKey = apiKeyManager.getKey('TWELVE_DATA');
       const forexSymbols = symbols.map(s => 
         s.includes('/') ? s : `${s.slice(0, 3)}/${s.slice(3)}`
       ).join(',');
       
-      const response = await fetch(
-        `${BASE_URL}/price?symbol=${forexSymbols}&apikey=${apiKey}`
-      );
+      const response = await callProxyAPI('twelve-data', 'price', {
+        symbol: forexSymbols,
+      });
       
       if (!response.ok) {
         return quotes;

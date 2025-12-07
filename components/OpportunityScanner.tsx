@@ -7,7 +7,7 @@ import { TradingHoursFilter } from '@/lib/trading-hours';
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { Tooltip } from '@/components/Tooltip';
-import { apiKeyManager, API_KEYS } from '@/config/api-keys';
+// API keys are now managed server-side via environment variables
 
 interface Opportunity {
   symbol: string;
@@ -395,12 +395,8 @@ export function OpportunityScanner() {
     // Initialize countdown
     setScanCountdown(interval / 1000);
     
-    // Check API key failures periodically
-    const checkApiKeys = () => {
-      const finnhubFailures = apiKeyManager.getFailureCount('FINNHUB');
-      const newsdataFailures = apiKeyManager.getFailureCount('NEWSDATA');
-      setApiKeyIssues({ finnhub: finnhubFailures, newsdata: newsdataFailures });
-    };
+    // API keys are now managed server-side
+    // No need to check failures client-side
     
     const apiKeyCheckInterval = setInterval(checkApiKeys, 30000); // Check every 30 seconds
     checkApiKeys(); // Initial check
@@ -644,36 +640,21 @@ export function OpportunityScanner() {
               <p className="text-xs text-gray-500 mb-3">
                 <strong>Impact:</strong> The AI will rely more heavily on technical analysis. Strong signals may be less frequent without fundamental and sentiment data.
                 <br />
-                <strong>Fix:</strong> Check your API keys in <code className="bg-black/30 px-1 rounded">config/api-keys.ts</code> or reduce scan frequency to avoid rate limits.
+                <strong>Fix:</strong> Check your API keys in environment variables (Vercel dashboard) or reduce scan frequency to avoid rate limits.
               </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    apiKeyManager.clearFailures('FINNHUB');
-                    apiKeyManager.clearFailures('NEWSDATA');
-                    setApiKeyIssues({ finnhub: 0, newsdata: 0 });
-                  }}
-                  className="px-3 py-1.5 text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-500/30 transition-all"
-                >
-                  🔄 Clear Failure Counts
-                </button>
-                <button
-                  onClick={() => setShowApiKeyDiagnostics(!showApiKeyDiagnostics)}
-                  className="px-3 py-1.5 text-xs font-medium bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/30 transition-all"
-                >
-                  🔍 Test API Keys
-                </button>
-              </div>
+              <p className="text-xs text-gray-400 mt-2">
+                Note: API keys are managed server-side via environment variables for security.
+              </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* API KEY DIAGNOSTICS */}
+      {/* API KEY INFO */}
       {showApiKeyDiagnostics && (
         <div className="mb-4 bg-[#141c2b] border border-[#1e2738] rounded-xl p-4">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-white font-bold text-lg">API Key Diagnostics</h3>
+            <h3 className="text-white font-bold text-lg">API Key Information</h3>
             <button
               onClick={() => setShowApiKeyDiagnostics(false)}
               className="text-gray-400 hover:text-white transition-colors"
@@ -683,117 +664,18 @@ export function OpportunityScanner() {
           </div>
 
           <div className="space-y-4">
-            {/* Finnhub Keys */}
-            <div>
-              <h4 className="text-white font-medium mb-2">Finnhub.io Keys</h4>
-              <div className="space-y-2">
-                {API_KEYS.FINNHUB.map((key, index) => {
-                  const maskedKey = `${key.substring(0, 8)}...${key.substring(key.length - 4)}`;
-                  const result = testResults[`FINNHUB_${index}`];
-                  return (
-                    <div key={index} className="flex items-center justify-between p-2 bg-[#0d1321] rounded-lg border border-[#1e2738]">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-400">Key {index + 1}:</span>
-                        <code className="text-xs text-gray-500">{maskedKey}</code>
-                        {result && (
-                          <span className={`text-xs px-2 py-0.5 rounded ${
-                            result.success 
-                              ? 'bg-green-500/20 text-green-400' 
-                              : result.status === 403
-                              ? 'bg-red-500/20 text-red-400'
-                              : result.status === 429
-                              ? 'bg-yellow-500/20 text-yellow-400'
-                              : 'bg-gray-500/20 text-gray-400'
-                          }`}>
-                            {result.success 
-                              ? '✅ Valid' 
-                              : result.status === 403
-                              ? '❌ Invalid/Expired'
-                              : result.status === 429
-                              ? '⚠️ Rate Limited'
-                              : `❌ Error: ${result.error || result.status}`
-                            }
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        onClick={async () => {
-                          setTestingKeys(true);
-                          const result = await apiKeyManager.testKey('FINNHUB', key);
-                          setTestResults(prev => ({ ...prev, [`FINNHUB_${index}`]: result }));
-                          setTestingKeys(false);
-                        }}
-                        disabled={testingKeys}
-                        className="px-3 py-1 text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-500/30 transition-all disabled:opacity-50"
-                      >
-                        Test
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* NewsData Keys */}
-            <div>
-              <h4 className="text-white font-medium mb-2">NewsData.io Keys</h4>
-              <div className="space-y-2">
-                {API_KEYS.NEWSDATA.map((key, index) => {
-                  const maskedKey = `${key.substring(0, 8)}...${key.substring(key.length - 4)}`;
-                  const result = testResults[`NEWSDATA_${index}`];
-                  return (
-                    <div key={index} className="flex items-center justify-between p-2 bg-[#0d1321] rounded-lg border border-[#1e2738]">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-400">Key {index + 1}:</span>
-                        <code className="text-xs text-gray-500">{maskedKey}</code>
-                        {result && (
-                          <span className={`text-xs px-2 py-0.5 rounded ${
-                            result.success 
-                              ? 'bg-green-500/20 text-green-400' 
-                              : result.status === 403
-                              ? 'bg-red-500/20 text-red-400'
-                              : result.status === 429
-                              ? 'bg-yellow-500/20 text-yellow-400'
-                              : 'bg-gray-500/20 text-gray-400'
-                          }`}>
-                            {result.success 
-                              ? '✅ Valid' 
-                              : result.status === 403
-                              ? '❌ Invalid/Expired'
-                              : result.status === 429
-                              ? '⚠️ Rate Limited'
-                              : `❌ Error: ${result.error || result.status}`
-                            }
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        onClick={async () => {
-                          setTestingKeys(true);
-                          const result = await apiKeyManager.testKey('NEWSDATA', key);
-                          setTestResults(prev => ({ ...prev, [`NEWSDATA_${index}`]: result }));
-                          setTestingKeys(false);
-                        }}
-                        disabled={testingKeys}
-                        className="px-3 py-1 text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-500/30 transition-all disabled:opacity-50"
-                      >
-                        Test
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Instructions */}
             <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
               <p className="text-xs text-blue-300 mb-2">
-                <strong>How to Fix:</strong>
+                <strong>API Keys are Managed Server-Side</strong>
               </p>
-              <ul className="text-xs text-blue-300 space-y-1 list-disc list-inside">
-                <li><strong>403 Forbidden:</strong> API key is invalid or expired. Get a new key from the provider&apos;s website.</li>
+              <p className="text-xs text-blue-300 mb-2">
+                For security, API keys are stored in environment variables on the server and are never exposed to the client.
+              </p>
+              <ul className="text-xs text-blue-300 space-y-1 list-disc list-inside mt-2">
+                <li><strong>403 Forbidden:</strong> API key is invalid or expired. Update in Vercel environment variables.</li>
                 <li><strong>429 Rate Limited:</strong> Too many requests. Wait or upgrade your API plan.</li>
-                <li>Update keys in <code className="bg-black/30 px-1 rounded">config/api-keys.ts</code> and restart the dev server.</li>
+                <li>Update keys in Vercel Dashboard → Settings → Environment Variables</li>
+                <li>After updating, redeploy your application</li>
               </ul>
             </div>
           </div>

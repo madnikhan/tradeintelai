@@ -3,9 +3,9 @@
  * Provides economic indicators and fundamental data
  */
 
-import { apiKeyManager } from '@/config/api-keys';
-
-const BASE_URL = 'https://www.alphavantage.co/query';
+// Note: Alpha Vantage is not currently used in the system
+// This file is kept for potential future use
+// If needed, create an API proxy route similar to other providers
 
 interface EconomicIndicator {
   name: string;
@@ -94,38 +94,9 @@ export class AlphaVantageProvider {
     ask: number;
     timestamp: Date;
   } | null> {
-    try {
-      const apiKey = apiKeyManager.getKey('ALPHA_VANTAGE');
-      
-      const response = await fetch(
-        `${BASE_URL}?function=CURRENCY_EXCHANGE_RATE&from_currency=${fromCurrency}&to_currency=${toCurrency}&apikey=${apiKey}`
-      );
-      
-      if (!response.ok) {
-        return null;
-      }
-      
-      const data = await response.json();
-      const rateData = data['Realtime Currency Exchange Rate'];
-      
-      if (!rateData) {
-        return null;
-      }
-      
-      const rate = parseFloat(rateData['5. Exchange Rate']);
-      const bid = parseFloat(rateData['8. Bid Price']) || rate * 0.9999;
-      const ask = parseFloat(rateData['9. Ask Price']) || rate * 1.0001;
-      
-      return {
-        rate,
-        bid,
-        ask,
-        timestamp: new Date(rateData['6. Last Refreshed']),
-      };
-    } catch (error) {
-      console.error('Alpha Vantage getForexRate error:', error);
-      return null;
-    }
+    // Alpha Vantage not currently used - returns null
+    // To enable: create API proxy route and update this method
+    return null;
   }
 
   /**
@@ -143,41 +114,9 @@ export class AlphaVantageProvider {
       return cached.data;
     }
     
-    try {
-      const apiKey = apiKeyManager.getKey('ALPHA_VANTAGE');
-      
-      const response = await fetch(
-        `${BASE_URL}?function=${function_name}&apikey=${apiKey}`
-      );
-      
-      if (!response.ok) {
-        return null;
-      }
-      
-      const data = await response.json();
-      
-      // Alpha Vantage returns data in 'data' array
-      if (!data.data || data.data.length === 0) {
-        console.warn(`Alpha Vantage: No data for ${displayName}`);
-        return null;
-      }
-      
-      const latestData = data.data[0];
-      const result: EconomicIndicator = {
-        name: displayName,
-        value: parseFloat(latestData.value),
-        date: latestData.date,
-        unit,
-      };
-      
-      this.cache.set(cacheKey, { data: result, timestamp: Date.now() });
-      console.log(`✅ Alpha Vantage: ${displayName} = ${result.value}${unit}`);
-      
-      return result;
-    } catch (error) {
-      console.error(`Alpha Vantage get${displayName} error:`, error);
-      return null;
-    }
+    // Alpha Vantage not currently used - returns null
+    // To enable: create API proxy route and update this method
+    return null;
   }
 
   /**

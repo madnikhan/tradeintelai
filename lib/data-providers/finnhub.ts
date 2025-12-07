@@ -3,11 +3,10 @@
  * Provides economic calendar, market news, and sentiment data
  */
 
-import { apiKeyManager } from '@/config/api-keys';
 import { EconomicEvent } from '@/lib/economic-calendar';
 import { logger } from '@/lib/logger';
+import { callProxyAPI } from '@/lib/api-proxy-client';
 
-const BASE_URL = 'https://finnhub.io/api/v1';
 
 interface FinnhubCalendarEvent {
   country: string;
@@ -67,21 +66,22 @@ export class FinnhubProvider {
     }
     
     try {
-      const apiKey = apiKeyManager.getKey('FINNHUB');
       const from = fromDate || new Date();
       const to = toDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days ahead
       
       const fromStr = from.toISOString().split('T')[0];
       const toStr = to.toISOString().split('T')[0];
       
-      const response = await fetch(
-        `${BASE_URL}/calendar/economic?from=${fromStr}&to=${toStr}&token=${apiKey}`
-      );
+      const response = await callProxyAPI('finnhub', 'calendar/economic', {
+        from: fromStr,
+        to: toStr,
+      });
       
       if (!response.ok) {
-        apiKeyManager.recordFailure('FINNHUB', apiKey);
-        if (response.status === 403) {
-          logger.warn('⚠️ Finnhub API: 403 Forbidden - API key may be invalid or expired. Please check your API keys in config/api-keys.ts');
+        if (response.status === 401) {
+          logger.warn('⚠️ Finnhub API: Authentication required. Please sign in.');
+        } else if (response.status === 403) {
+          logger.warn('⚠️ Finnhub API: 403 Forbidden - API key may be invalid or expired. Please check your environment variables.');
         } else if (response.status === 429) {
           logger.warn('⚠️ Finnhub API: 429 Too Many Requests - Rate limit exceeded. Consider reducing scan frequency or upgrading API plan.');
         } else {
@@ -89,8 +89,6 @@ export class FinnhubProvider {
         }
         return [];
       }
-      
-      apiKeyManager.recordSuccess('FINNHUB', apiKey);
       
       const data = await response.json();
       
@@ -131,11 +129,9 @@ export class FinnhubProvider {
    */
   static async getMarketNews(category: 'general' | 'forex' | 'crypto' = 'forex'): Promise<FinnhubNews[]> {
     try {
-      const apiKey = apiKeyManager.getKey('FINNHUB');
-      
-      const response = await fetch(
-        `${BASE_URL}/news?category=${category}&token=${apiKey}`
-      );
+      const response = await callProxyAPI('finnhub', 'news', {
+        category,
+      });
       
       if (!response.ok) {
         return [];
@@ -157,11 +153,9 @@ export class FinnhubProvider {
     const rates = new Map<string, number>();
     
     try {
-      const apiKey = apiKeyManager.getKey('FINNHUB');
-      
-      const response = await fetch(
-        `${BASE_URL}/forex/rates?base=${base}&token=${apiKey}`
-      );
+      const response = await callProxyAPI('finnhub', 'forex/rates', {
+        base,
+      });
       
       if (!response.ok) {
         return rates;

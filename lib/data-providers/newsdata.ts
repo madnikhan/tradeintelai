@@ -3,10 +3,8 @@
  * Provides news and sentiment analysis for forex markets
  */
 
-import { apiKeyManager } from '@/config/api-keys';
 import { logger } from '@/lib/logger';
-
-const BASE_URL = 'https://newsdata.io/api/1';
+import { callProxyAPI } from '@/lib/api-proxy-client';
 
 interface NewsArticle {
   title: string;
@@ -43,19 +41,21 @@ export class NewsDataProvider {
     }
     
     try {
-      const apiKey = apiKeyManager.getKey('NEWSDATA');
       const query = keywords?.length 
         ? keywords.join(' OR ')
         : 'forex OR currency OR "central bank" OR "interest rate" OR EUR OR USD OR GBP';
       
-      const response = await fetch(
-        `${BASE_URL}/news?apikey=${apiKey}&q=${encodeURIComponent(query)}&language=en&category=business`
-      );
+      const response = await callProxyAPI('newsdata', 'news', {
+        q: query,
+        language: 'en',
+        category: 'business',
+      });
       
       if (!response.ok) {
-        apiKeyManager.recordFailure('NEWSDATA', apiKey);
-        if (response.status === 403) {
-          logger.warn('⚠️ NewsData API: 403 Forbidden - API key may be invalid or expired. Please check your API keys in config/api-keys.ts');
+        if (response.status === 401) {
+          logger.warn('⚠️ NewsData API: Authentication required. Please sign in.');
+        } else if (response.status === 403) {
+          logger.warn('⚠️ NewsData API: 403 Forbidden - API key may be invalid or expired. Please check your environment variables.');
         } else if (response.status === 429) {
           logger.warn('⚠️ NewsData API: 429 Too Many Requests - Rate limit exceeded. Consider reducing scan frequency or upgrading API plan.');
         } else {
@@ -63,8 +63,6 @@ export class NewsDataProvider {
         }
         return [];
       }
-      
-      apiKeyManager.recordSuccess('NEWSDATA', apiKey);
       
       const data: NewsResponse = await response.json();
       

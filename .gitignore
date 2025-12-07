@@ -53,7 +53,6 @@ command_*.json
 response_*.json
 
 # security - API keys (should never be committed)
-config/api-keys.ts
 *.key
 *.pem
 secrets/

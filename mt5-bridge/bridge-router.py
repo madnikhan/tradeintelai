@@ -136,12 +136,17 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 def main():
     """Main entry point"""
     import argparse
+    import os
     
     parser = argparse.ArgumentParser(description='Bridge Router for MT5')
     parser.add_argument('--port', type=int, default=8080, help='Router port (frontend connects here)')
     parser.add_argument('--manager', type=str, default='http://localhost:8079', help='Manager API URL')
+    parser.add_argument('--host', type=str, default=None, help='Host to bind to (default: localhost for local, 0.0.0.0 for network)')
     
     args = parser.parse_args()
+    
+    # Determine host: use 0.0.0.0 if BRIDGE_ALLOW_NETWORK env var is set, otherwise localhost
+    host = args.host or (os.getenv('BRIDGE_ALLOW_NETWORK', '').lower() in ('true', '1', 'yes') and '0.0.0.0' or 'localhost')
     
     logger.info("🚀 Starting Bridge Router...")
     
@@ -150,8 +155,12 @@ def main():
     RouterHTTPHandler.router = router
     
     # Start router server
-    server = ThreadingHTTPServer(('localhost', args.port), RouterHTTPHandler)
-    logger.info(f"📡 Bridge Router running on http://localhost:{args.port}")
+    server = ThreadingHTTPServer((host, args.port), RouterHTTPHandler)
+    if host == '0.0.0.0':
+        logger.info(f"📡 Bridge Router running on http://0.0.0.0:{args.port} (accessible from network)")
+        logger.info(f"🌐 Access from other devices: http://YOUR_IP:{args.port}")
+    else:
+        logger.info(f"📡 Bridge Router running on http://localhost:{args.port} (local only)")
     logger.info(f"🔗 Connected to Manager API: {args.manager}")
     
     try:

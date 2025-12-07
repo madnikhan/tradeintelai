@@ -35,26 +35,50 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isFirebaseConfigured()) {
-      setLoading(false);
-      return;
+    let mounted = true;
+    let unsubscribe: (() => void) | null = null;
+    
+    try {
+      if (!isFirebaseConfigured()) {
+        if (mounted) setLoading(false);
+        return;
+      }
+
+      // Subscribe to auth state changes
+      unsubscribe = onAuthStateChange((authUser) => {
+        if (mounted) {
+          setUser(authUser);
+          setLoading(false);
+        }
+      });
+
+      // Also check current user immediately
+      try {
+        const currentUser = getCurrentUser();
+        if (currentUser && mounted) {
+          setUser(currentUser);
+          setLoading(false);
+        } else if (mounted) {
+          // If no current user, still set loading to false after a short delay
+          // to allow Firebase to initialize
+          setTimeout(() => {
+            if (mounted) setLoading(false);
+          }, 1000);
+        }
+      } catch (error) {
+        console.error('Error getting current user:', error);
+        if (mounted) setLoading(false);
+      }
+    } catch (error) {
+      console.error('Auth initialization error:', error);
+      if (mounted) setLoading(false);
     }
-
-    // Subscribe to auth state changes
-    const unsubscribe = onAuthStateChange((authUser) => {
-      setUser(authUser);
-      setLoading(false);
-    });
-
-    // Also check current user immediately
-    const currentUser = getCurrentUser();
-    if (currentUser) {
-      setUser(currentUser);
-      setLoading(false);
-    }
-
+    
     return () => {
-      unsubscribe();
+      mounted = false;
+      if (unsubscribe) {
+        unsubscribe();
+      }
     };
   }, []);
 

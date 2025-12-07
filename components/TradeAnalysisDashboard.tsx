@@ -153,7 +153,11 @@ export function TradeAnalysisDashboard() {
             if (pos.status === 'open') {
               try {
                 // Fetch current market price for open positions
-                const priceResponse = await fetch(getBridgeUrl(`/price/${pos.symbol}`));
+                const priceResponse = await fetch(getBridgeUrl(`/price/${pos.symbol}`), {
+                  headers: {
+                    'ngrok-skip-browser-warning': 'true', // Skip ngrok free tier browser warning
+                  },
+                });
                 if (priceResponse.ok) {
                   const priceData = await priceResponse.json();
                   if (priceData.success && priceData.price) {

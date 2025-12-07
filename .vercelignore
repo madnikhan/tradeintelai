@@ -1,0 +1,8 @@
+# MT5 Bridge directories (local-only symlinks)
+mt5-commands/
+mt5-responses/
+
+# Local development files
+*.log
+bridge.log
+

@@ -12,3 +12,4 @@ export const apiKeyManager = {
   getKey: () => null,
   rotateKey: () => null,
 };
+// Vercel build fix - Sun Dec  7 19:59:24 GMT 2025

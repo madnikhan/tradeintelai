@@ -103,8 +103,8 @@ class SystemTester {
               confidence: cotAnalysis.confidence,
               recommendation: cotAnalysis.recommendation,
               hasAdvancedIndicators,
-              cotIndex: cotAnalysis.cotIndex,
-              cotMomentum: cotAnalysis.cotMomentum
+              cotIndex: (cotAnalysis as any).cotIndex,
+              cotMomentum: (cotAnalysis as any).cotMomentum
             });
           } else {
             this.addResult('COT Analysis', 'WARN', `${symbol} COT analysis incomplete`, cotAnalysis);

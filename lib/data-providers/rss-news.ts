@@ -222,7 +222,21 @@ export class RSSNewsProvider {
       const articles = await this.getForexNews(keywords);
       
       // Filter articles using fuzzy matching
-      const relevantArticles = SentimentParser.filterRelevantArticles(articles, keywords);
+      const filtered = SentimentParser.filterRelevantArticles(articles, keywords);
+      
+      // Ensure all articles match NewsArticle interface
+      const relevantArticles: NewsArticle[] = filtered.map(article => ({
+        title: article.title || '',
+        description: article.description || '',
+        content: (article as NewsArticle).content || article.description || '',
+        pubDate: (article as NewsArticle).pubDate || new Date().toISOString(),
+        source_id: (article as NewsArticle).source_id || 'unknown',
+        source_url: (article as NewsArticle).source_url || '',
+        category: (article as NewsArticle).category || [],
+        country: (article as NewsArticle).country || [],
+        language: (article as NewsArticle).language || 'en',
+        sentiment: (article as NewsArticle).sentiment,
+      }));
       
       const executionTime = Date.now() - startTime;
       ParserMonitor.recordExecution('RSS-News', true, executionTime, relevantArticles.length);

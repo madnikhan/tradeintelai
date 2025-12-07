@@ -83,8 +83,8 @@ export class COTAnalyzer {
           netSmallSpec: -cot.netSmallSpec, // Invert small spec positions
           nonCommercialLong: cot.nonCommercialShort, // Swap long/short
           nonCommercialShort: cot.nonCommercialLong,
-          commercialLong: cot.commercialShort,
-          commercialShort: cot.commercialLong,
+          reportableLong: cot.reportableShort, // Commercial long = inverted short
+          reportableShort: cot.reportableLong, // Commercial short = inverted long
         }));
         console.log(`✅ Loaded ${data.length} weeks of inverse COT data for ${symbol} (from ${quoteCurrency})`);
       } else {

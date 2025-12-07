@@ -19,9 +19,9 @@ import {
   Unsubscribe
 } from 'firebase/firestore';
 import { getDb, isFirebaseConfigured } from './config';
+import { getUserId } from './auth';
 import { Trade } from '@/types/trading';
 import { getAccountDocumentId, getAccountCollectionId } from './account-context';
-import { getUserId as getAuthUserId } from './auth';
 
 const TRADES_COLLECTION = 'trades';
 

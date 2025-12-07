@@ -211,7 +211,7 @@ export function AITradingDashboard({ onAnalysisChange }: AITradingDashboardProps
                 <p className="text-xs opacity-60 mt-2">
                   💡 Based on technical indicators, fundamentals, sentiment, COT, and regime analysis.
                   <br />
-                  <span className="text-yellow-300">Note: GPT-5.1's visual chart analysis (below) may differ as it analyzes chart patterns directly.</span>
+                  <span className="text-yellow-300">Note: GPT-5.1&apos;s visual chart analysis (below) may differ as it analyzes chart patterns directly.</span>
                 </p>
               </div>
               <div className="text-right">

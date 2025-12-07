@@ -12,7 +12,7 @@ import {
   query, 
   where, 
   orderBy, 
-  aggregateQuerySnapshot,
+  AggregateQuerySnapshot,
   AggregateField,
   Timestamp
 } from 'firebase/firestore';
@@ -180,7 +180,7 @@ export async function getPerformanceBySymbol(): Promise<Record<string, Performan
         timestamp: data.timestamp?.toDate() || new Date(data.timestamp),
       } as Trade;
       
-      const symbol = trade.symbol || trade.pair || 'UNKNOWN';
+      const symbol = trade.pair || 'UNKNOWN';
       if (!tradesBySymbol[symbol]) {
         tradesBySymbol[symbol] = [];
       }

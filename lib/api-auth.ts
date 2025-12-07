@@ -22,8 +22,8 @@ async function getAdminAuth(): Promise<FirebaseAdminAuth | null> {
     
     if (!adminApp) {
       // Check if already initialized
-      if (admin.getApps().length > 0) {
-        adminApp = admin.getApps()[0];
+      if (admin.apps.length > 0) {
+        adminApp = admin.apps[0];
       } else {
         let serviceAccount: any = null;
         
@@ -51,7 +51,7 @@ async function getAdminAuth(): Promise<FirebaseAdminAuth | null> {
         // Initialize with service account if available
         if (serviceAccount) {
           adminApp = admin.initializeApp({
-            credential: admin.cert(serviceAccount),
+            credential: admin.credential.cert(serviceAccount),
             projectId: serviceAccount.project_id || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
           });
         } else {
@@ -65,7 +65,7 @@ async function getAdminAuth(): Promise<FirebaseAdminAuth | null> {
     }
     
     if (!adminAuth) {
-      adminAuth = admin.getAuth(adminApp);
+      adminAuth = adminApp.auth();
     }
     
     return adminAuth;

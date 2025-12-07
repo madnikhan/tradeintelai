@@ -427,7 +427,7 @@ export function ChartVisionAnalysis({
               )}
             </>
           ) : (
-            <p className="text-sm text-gray-500">Click "Re-analyze" to analyze chart patterns</p>
+            <p className="text-sm text-gray-500">Click &quot;Re-analyze&quot; to analyze chart patterns</p>
           )}
         </div>
       )}

@@ -452,21 +452,7 @@ export function TradeAnalysisDashboard() {
       return;
     }
 
-    const newTrade = {
-      symbol: manualTrade.symbol,
-      type: manualTrade.direction.toLowerCase(),
-      entryPrice: parseFloat(manualTrade.entryPrice),
-      exitPrice: parseFloat(manualTrade.exitPrice),
-      volume: parseFloat(manualTrade.lotSize),
-      profit: manualTrade.profit ? parseFloat(manualTrade.profit) : 0,
-      balance: manualTrade.balance ? parseFloat(manualTrade.balance) : balance,
-    };
-
-    const updatedTrades = [...trades, newTrade];
-    setTrades(updatedTrades);
-    analyzeTrades(updatedTrades);
-
-    // Also store in Trade format for PerformanceTracker
+    // Convert to Trade format for charts
     const tradeForPerformance = convertClosedTradeToTrade(
       {
         symbol: manualTrade.symbol,

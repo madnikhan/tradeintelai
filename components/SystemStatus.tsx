@@ -145,7 +145,10 @@ export function SystemStatus() {
 
         const response = await fetch(getBridgeUrl('/health'), {
           method: 'GET',
-          headers: { 'Accept': 'application/json' },
+          headers: { 
+            'Accept': 'application/json',
+            'ngrok-skip-browser-warning': 'true', // Skip ngrok free tier browser warning
+          },
           signal: controller.signal,
         });
 

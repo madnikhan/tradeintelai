@@ -38,6 +38,7 @@ export function ConnectionTester() {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true', // Skip ngrok free tier browser warning
         }
       });
       

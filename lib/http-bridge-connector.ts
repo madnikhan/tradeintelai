@@ -5,6 +5,16 @@ export class HTTPBridgeConnector {
   private baseUrl = BRIDGE_CONFIG.baseUrl;
   private connected = false;
 
+  /**
+   * Get default headers for bridge requests
+   * Includes ngrok-skip-browser-warning for ngrok free tier
+   */
+  private getDefaultHeaders(): HeadersInit {
+    return {
+      'ngrok-skip-browser-warning': 'true', // Skip ngrok free tier browser warning
+    };
+  }
+
   async connect(): Promise<boolean> {
     try {
       // Use AbortController for timeout - shorter timeout for health check
@@ -12,7 +22,8 @@ export class HTTPBridgeConnector {
       const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout for health
       
       const response = await fetch(getBridgeUrl('/health'), {
-        signal: controller.signal
+        signal: controller.signal,
+        headers: this.getDefaultHeaders(),
       });
       clearTimeout(timeoutId);
       
@@ -47,7 +58,8 @@ export class HTTPBridgeConnector {
       
       try {
         const response = await fetch(getBridgeUrl('/account'), {
-          signal: controller.signal
+          signal: controller.signal,
+          headers: this.getDefaultHeaders(),
         });
         clearTimeout(timeoutId);
         
@@ -84,7 +96,8 @@ export class HTTPBridgeConnector {
       
       try {
         const response = await fetch(getBridgeUrl(`/price/${symbol}`), {
-          signal: controller.signal
+          signal: controller.signal,
+          headers: this.getDefaultHeaders(),
         });
         clearTimeout(timeoutId);
         
@@ -132,6 +145,7 @@ export class HTTPBridgeConnector {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...this.getDefaultHeaders(),
           },
           body: JSON.stringify({
             symbol: trade.symbol,
@@ -204,7 +218,8 @@ export class HTTPBridgeConnector {
       
       try {
         const response = await fetch(getBridgeUrl('/positions'), {
-          signal: controller.signal
+          signal: controller.signal,
+          headers: this.getDefaultHeaders(),
         });
         clearTimeout(timeoutId);
         

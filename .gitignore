@@ -24,6 +24,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# mt5 bridge logs
+mt5-bridge/*.log
+*.log
+!package.json
+!package-lock.json
+
 # local env files
 .env*.local
 .env*.local.bak

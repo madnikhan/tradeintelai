@@ -285,7 +285,7 @@ function parseGPTResponse(text: string, analysis: MarketAnalysis): GPTExplanatio
   const pair = analysis.recommendation.includes('EUR') ? 'EUR/USD' : 'Currency pair';
   
   // Extract summary
-  const summaryMatch = text.match(/\*\*Summary:\*\*\s*(.+?)(?=\*\*|$)/is);
+  const summaryMatch = text.match(/\*\*Summary:\*\*\s*([\s\S]+?)(?=\*\*|$)/i);
   const summary = summaryMatch ? summaryMatch[1].trim() : `Based on the analysis, ${analysis.recommendation} is recommended with ${analysis.confidence}% confidence. Overall score: ${analysis.overallScore}/100.`;
 
   // Extract key points

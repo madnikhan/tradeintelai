@@ -13,6 +13,8 @@ export interface TradeSizeResult {
   message: string;
   volatilityAdjustment?: number;
   newsAdjustment?: number;
+  correlationAdjustment?: number;
+  drawdownAdjustment?: number;
   adjustedRiskAmount?: number;
 }
 

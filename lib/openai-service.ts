@@ -416,7 +416,9 @@ Format: "Score: X\nExplanation: Y"`;
       // Clean old cache entries (keep only last 100)
       if (sentimentCache.size > 100) {
         const oldestKey = sentimentCache.keys().next().value;
-        sentimentCache.delete(oldestKey);
+        if (oldestKey) {
+          sentimentCache.delete(oldestKey);
+        }
       }
       
       return score;

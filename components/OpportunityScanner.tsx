@@ -398,13 +398,9 @@ export function OpportunityScanner() {
     // API keys are now managed server-side
     // No need to check failures client-side
     
-    const apiKeyCheckInterval = setInterval(checkApiKeys, 30000); // Check every 30 seconds
-    checkApiKeys(); // Initial check
-    
     return () => {
       clearInterval(scanInterval);
       clearInterval(countdownInterval);
-      clearInterval(apiKeyCheckInterval);
     };
   }, [autoScanEnabled, selectedPairs]);
 

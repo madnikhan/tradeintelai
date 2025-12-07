@@ -70,3 +70,5 @@ firebase-adminsdk-*.json
 !postcss.config.js
 !.eslintrc.json
 
+mt5-commands
+mt5-responses

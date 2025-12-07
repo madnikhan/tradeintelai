@@ -124,6 +124,9 @@ export function TradeAnalysisDashboard() {
       
       const response = await fetch(getBridgeUrl('/all-trades'), {
         signal: controller.signal,
+        headers: {
+          'ngrok-skip-browser-warning': 'true', // Skip ngrok free tier browser warning
+        },
       });
       
       clearTimeout(timeoutId);

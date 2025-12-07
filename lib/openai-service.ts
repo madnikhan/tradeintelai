@@ -309,7 +309,7 @@ function parseGPTResponse(text: string, analysis: MarketAnalysis): GPTExplanatio
     : analysis.detailedReasoning?.risk?.slice(0, 2) || ['Market volatility', 'Unexpected news events'];
 
   // Extract recommendation
-  const recommendationMatch = text.match(/\*\*Recommendation:\*\*\s*(.+?)(?=\*\*|$)/is);
+  const recommendationMatch = text.match(/\*\*Recommendation:\*\*\s*([\s\S]+?)(?=\*\*|$)/i);
   const recommendation = recommendationMatch
     ? recommendationMatch[1].trim()
     : `${analysis.recommendation} ${pair} with stop loss at ${analysis.suggestedStopLoss} and take profit at ${analysis.suggestedTakeProfit}.`;

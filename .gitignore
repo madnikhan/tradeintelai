@@ -71,3 +71,4 @@ firebase-adminsdk-*.json
 
 mt5-commands
 mt5-responses
+config/api-keys.ts

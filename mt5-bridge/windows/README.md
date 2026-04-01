@@ -111,6 +111,7 @@ Vercel only serves the website. Your browser must reach the bridge running on yo
 
 - Install **Python 3.10+** for Windows from **[python.org](https://www.python.org/downloads/windows/)** (not only the Microsoft Store prompt). In the installer, enable **Add python.exe to PATH** and the **py launcher**.
 - If you see **“Python was not found; run without arguments to install from the Microsoft Store”** or `...\WindowsApps\python.exe` in errors, Windows is using a **Store stub**, not real Python. Either install from **python.org**, or go to **Settings → Apps → Advanced app settings → App execution aliases** and turn **off** `python.exe` / `python3.exe` so a real install on PATH is used. The updated `StartBridge.ps1` skips that stub and prefers **`py -3`** or the next real `python` on PATH.
+- If you have **several** Pythons (e.g. **3.13** stable and **3.15 alpha**), `py -3` uses the **newest** 3.x. To force the stable bridge runtime: before starting, run `$env:MT5_PYTHON_VERSION = "3.13"` (matches **Python Launcher**’s `py -3.13`).
 - Install / open **MetaTrader 5** at least once (so the Terminal data folder exists).
 - In MT5, compile + attach the EA `mt5-bridge/MT5FileBridgeEA.mq5` to a chart.
 - In the EA inputs (or inside the EA if hardcoded), ensure it uses these folder names:

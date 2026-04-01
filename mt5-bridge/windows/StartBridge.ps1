@@ -23,7 +23,17 @@ function Resolve-PythonLaunch {
   # Prefer the real "py" launcher (comes with python.org installer)
   $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
   if ($pyLauncher -and ($pyLauncher.Source -notmatch $storeStub)) {
-    return @{ Exe = $pyLauncher.Source; Args = @("-3") }
+    # py -3 picks the *latest* 3.x (e.g. 3.15 alpha). Pin stable: $env:MT5_PYTHON_VERSION = "3.13"
+    $pyVerArg = '-3'
+    if ($env:MT5_PYTHON_VERSION -and $env:MT5_PYTHON_VERSION.Trim().Length -gt 0) {
+      $v = $env:MT5_PYTHON_VERSION.Trim()
+      if ($v -notmatch '^\d+\.\d+') {
+        Write-Host "MT5_PYTHON_VERSION should be like 3.13 — got: $v" -ForegroundColor Yellow
+      } else {
+        $pyVerArg = "-$v"
+      }
+    }
+    return @{ Exe = $pyLauncher.Source; Args = @($pyVerArg) }
   }
 
   foreach ($name in 'python', 'python3') {

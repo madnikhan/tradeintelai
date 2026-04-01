@@ -17,15 +17,23 @@ function Find-Mt5FilesDir {
 }
 
 function Resolve-PythonLaunch {
-  # Windows: prefer `python`, then Python Launcher `py -3`
-  $py = Get-Command python -ErrorAction SilentlyContinue
-  if ($py) {
-    return @{ Exe = $py.Source; Args = @() }
-  }
+  # Windows Store ships a fake python.exe under WindowsApps that only opens the Store — skip it.
+  $storeStub = [regex]'WindowsApps\\(python|python3)\.exe$'
+
+  # Prefer the real "py" launcher (comes with python.org installer)
   $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
-  if ($pyLauncher) {
+  if ($pyLauncher -and ($pyLauncher.Source -notmatch $storeStub)) {
     return @{ Exe = $pyLauncher.Source; Args = @("-3") }
   }
+
+  foreach ($name in 'python', 'python3') {
+    $cmds = @(Get-Command $name -All -ErrorAction SilentlyContinue)
+    foreach ($c in $cmds) {
+      if ($c.Source -match $storeStub) { continue }
+      return @{ Exe = $c.Source; Args = @() }
+    }
+  }
+
   return $null
 }
 
@@ -85,9 +93,13 @@ if (-not (Test-Path -LiteralPath $bridgePy)) {
 
 $launch = Resolve-PythonLaunch
 if (-not $launch) {
-  Write-Host "Python was not found in PATH." -ForegroundColor Red
-  Write-Host "Install Python 3.10+ from https://www.python.org/downloads/ and enable 'Add python.exe to PATH'." -ForegroundColor Yellow
-  Write-Host "Then open a NEW PowerShell window and run this script again." -ForegroundColor Yellow
+  Write-Host "Python was not found, or only the Microsoft Store stub is on PATH." -ForegroundColor Red
+  Write-Host "Install Python 3.10+ from https://www.python.org/downloads/windows/" -ForegroundColor Yellow
+  Write-Host "In the installer: enable 'Add python.exe to PATH' and install the 'py launcher'." -ForegroundColor Yellow
+  Write-Host "Then close this window, open a NEW PowerShell, and run StartBridge again." -ForegroundColor Yellow
+  Write-Host ""
+  Write-Host "Optional: Settings - Apps - Advanced app settings - App execution aliases:" -ForegroundColor Gray
+  Write-Host "  Turn OFF python.exe and python3.exe (stops the fake Store shortcut)." -ForegroundColor Gray
   exit 1
 }
 

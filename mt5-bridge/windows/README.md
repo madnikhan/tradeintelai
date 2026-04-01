@@ -7,6 +7,33 @@ This folder contains Windows launch scripts for the MT5 file-based HTTP bridge.
 - You need the **full project** (the `tradeintelai` repo), not only this `windows` folder.
 - **Double-click** `StartBridge.bat` from Explorer **after** you put the repo on your PC (e.g. `C:\Users\You\tradeintelai\mt5-bridge\windows\StartBridge.bat`).
 
+### Updating only `mt5-bridge\windows` (`.bat` and `.ps1`)
+
+Replace **`StartBridge.bat`** and **`StartBridge.ps1`** in your PC folder with the latest versions. Your **`logs\`** subfolder is optional to keep (old logs); the scripts recreate it.
+
+**Option A — Git (repo already cloned)**
+
+```powershell
+cd C:\Users\Admin\tradeintelai
+git pull origin main
+```
+
+That updates the whole repo, including `mt5-bridge\windows`.
+
+**Option B — No Git (ZIP from GitHub)**
+
+1. Open [tradeintelai on GitHub](https://github.com/madnikhan/tradeintelai) → **Code → Download ZIP**.  
+2. Extract the ZIP.  
+3. Copy these **into your existing** `...\tradeintelai\mt5-bridge\windows\` (overwrite):
+   - `StartBridge.bat`
+   - `StartBridge.ps1`
+4. Optionally copy **`README.md`** from the same folder so your instructions stay in sync.
+
+**After updating**
+
+- Run **`StartBridge.bat`** again from `mt5-bridge\windows` (or `& "...\StartBridge.bat"` from PowerShell).  
+- If you had set **`MT5_FILES_DIR`** in that PowerShell window, set it again (session variables do not persist after you close the terminal).
+
 ### This `windows` folder is not `C:\Windows`
 
 - **`C:\Windows`** = Windows operating system files (wrong place).

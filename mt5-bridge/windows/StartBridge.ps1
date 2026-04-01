@@ -51,14 +51,29 @@ if (-not $env:MT5_FILES_DIR -or $env:MT5_FILES_DIR.Trim().Length -eq 0) {
   Write-Host "Using MT5_FILES_DIR: $($env:MT5_FILES_DIR)"
 }
 
-# PSScriptRoot = ...\mt5-bridge\windows  ->  repo root is two levels up
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+# Repo root: either TRADEINTELAI_ROOT (if you moved scripts) or ...\tradeintelai (two levels up from this folder)
+if ($env:TRADEINTELAI_ROOT -and $env:TRADEINTELAI_ROOT.Trim().Length -gt 0) {
+  $repoRoot = (Resolve-Path -LiteralPath $env:TRADEINTELAI_ROOT.Trim()).Path
+  Write-Host "Using TRADEINTELAI_ROOT: $repoRoot" -ForegroundColor Cyan
+} else {
+  # PSScriptRoot should be ...\tradeintelai\mt5-bridge\windows
+  $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+}
 $bridgeDir = Join-Path $repoRoot "mt5-bridge"
 $bridgePy  = Join-Path $bridgeDir "wine-mt5-connector.py"
 
 if (-not (Test-Path -LiteralPath $bridgePy)) {
   Write-Host "Bridge file not found: $bridgePy" -ForegroundColor Red
-  Write-Host "Run this script from the cloned tradeintelai repo (do not copy only the windows folder)." -ForegroundColor Yellow
+  Write-Host ""
+  Write-Host "This folder is NOT C:\Windows and NOT C:\Users\windows." -ForegroundColor Yellow
+  Write-Host "Scripts must live at:  <your-clone>\mt5-bridge\windows\" -ForegroundColor Yellow
+  Write-Host "You need the full repo (at least the mt5-bridge folder with wine-mt5-connector.py)." -ForegroundColor Yellow
+  Write-Host ""
+  Write-Host "To run:  cd <your-clone>   then   .\mt5-bridge\windows\StartBridge.bat" -ForegroundColor Gray
+  Write-Host "Do not use:  cd StartBridge.bat   (use .\StartBridge.bat to RUN it)" -ForegroundColor Gray
+  Write-Host ""
+  Write-Host "Or set repo path, then run this script from anywhere:" -ForegroundColor Yellow
+  Write-Host '  $env:TRADEINTELAI_ROOT = "C:\Users\Admin\tradeintelai"' -ForegroundColor Gray
   exit 1
 }
 

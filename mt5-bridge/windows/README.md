@@ -7,19 +7,43 @@ This folder contains Windows launch scripts for the MT5 file-based HTTP bridge.
 - You need the **full project** (the `tradeintelai` repo), not only this `windows` folder.
 - **Double-click** `StartBridge.bat` from Explorer **after** you put the repo on your PC (e.g. `C:\Users\You\tradeintelai\mt5-bridge\windows\StartBridge.bat`).
 
+### This `windows` folder is not `C:\Windows`
+
+- **`C:\Windows`** = Windows operating system files (wrong place).
+- **`C:\Users\windows`** = does not exist unless you created it (not the project).
+- The correct path looks like: **`C:\Users\Admin\tradeintelai\mt5-bridge\windows`**  
+  (your clone name may differ; `tradeintelai` is the GitHub repo folder).
+
 ### Do not use `cd` on the script file
 
-`cd` only changes folders. To **run** a script:
+`cd` only changes folders. To **run** a script, use `.\` in front of the name:
 
 ```powershell
-cd C:\path\to\tradeintelai
+cd C:\Users\Admin\tradeintelai
+.\mt5-bridge\windows\StartBridge.bat
+```
+
+```powershell
+cd C:\Users\Admin\tradeintelai
 .\mt5-bridge\windows\StartBridge.ps1
 ```
 
-Wrong (what causes “Cannot find path”):
+Wrong (common mistakes from PowerShell):
 
 ```powershell
+cd StartBridge.bat
 cd StartBridge.ps1
+```
+
+### Scripts only in a random folder?
+
+The `.bat` / `.ps1` files alone are not enough: they start **`wine-mt5-connector.py`** from **`mt5-bridge`** in the same repo.
+
+If you copied the scripts elsewhere but the repo is at `C:\Users\Admin\tradeintelai`:
+
+```powershell
+$env:TRADEINTELAI_ROOT = "C:\Users\Admin\tradeintelai"
+& "D:\wherever\StartBridge.ps1"
 ```
 
 ### PowerShell path tips

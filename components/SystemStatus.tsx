@@ -31,7 +31,7 @@ export function SystemStatus() {
       if (!configured) {
         return {
           id: 'openai',
-          name: 'GPT-5.1',
+          name: 'OpenAI GPT',
           status: 'offline',
           message: 'API key not configured',
           lastChecked: new Date(),
@@ -60,7 +60,7 @@ export function SystemStatus() {
         if (!authToken) {
           return {
             id: 'openai',
-            name: 'GPT-5.1',
+            name: 'OpenAI GPT',
             status: 'error',
             message: 'Sign in required to test',
             lastChecked: new Date(),
@@ -78,7 +78,7 @@ export function SystemStatus() {
             'Authorization': `Bearer ${authToken}`,
           },
           body: JSON.stringify({
-            model: 'gpt-4o',
+            model: 'gpt-4o-mini',
             messages: [{ role: 'user', content: 'test' }],
             max_completion_tokens: 5,
           }),
@@ -90,7 +90,7 @@ export function SystemStatus() {
         if (response.ok) {
           return {
             id: 'openai',
-            name: 'GPT-5.1',
+            name: 'OpenAI GPT',
             status: 'online',
             message: 'API responding',
             lastChecked: new Date(),
@@ -102,7 +102,7 @@ export function SystemStatus() {
           if (response.status === 401) {
             return {
               id: 'openai',
-              name: 'GPT-5.1',
+              name: 'OpenAI GPT',
               status: 'error',
               message: 'Authentication failed - sign in again',
               lastChecked: new Date(),
@@ -111,7 +111,7 @@ export function SystemStatus() {
           
           return {
             id: 'openai',
-            name: 'GPT-5.1',
+            name: 'OpenAI GPT',
             status: 'error',
             message: errorData.error?.message || `HTTP ${response.status}`,
             lastChecked: new Date(),
@@ -121,7 +121,7 @@ export function SystemStatus() {
         if (error.name === 'AbortError') {
           return {
             id: 'openai',
-            name: 'GPT-5.1',
+            name: 'OpenAI GPT',
             status: 'error',
             message: 'Request timeout',
             lastChecked: new Date(),
@@ -129,7 +129,7 @@ export function SystemStatus() {
         }
         return {
           id: 'openai',
-          name: 'GPT-5.1',
+          name: 'OpenAI GPT',
           status: 'error',
           message: error.message || 'Connection failed',
           lastChecked: new Date(),
@@ -140,22 +140,30 @@ export function SystemStatus() {
     // 2. Check MT5 Bridge
     const checkMT5Bridge = async (): Promise<SystemStatus> => {
       try {
+        const bridgeUrl = getBridgeUrl('/health');
+        console.log('[SystemStatus] Checking MT5 bridge at:', bridgeUrl);
+        
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // Increased timeout to 10s for ngrok
 
-        const response = await fetch(getBridgeUrl('/health'), {
+        const response = await fetch(bridgeUrl, {
           method: 'GET',
           headers: { 
             'Accept': 'application/json',
             'ngrok-skip-browser-warning': 'true', // Skip ngrok free tier browser warning
           },
           signal: controller.signal,
+          cache: 'no-cache', // Prevent caching
         });
 
         clearTimeout(timeoutId);
 
+        console.log('[SystemStatus] Bridge response status:', response.status, response.statusText);
+
         if (response.ok) {
           const data = await response.json();
+          console.log('[SystemStatus] Bridge response data:', data);
+          
           if (data.status === 'running') {
             return {
               id: 'mt5-bridge',
@@ -167,20 +175,40 @@ export function SystemStatus() {
           }
         }
 
+        const errorText = await response.text().catch(() => 'No error details');
+        console.error('[SystemStatus] Bridge not responding:', response.status, errorText);
+        
         return {
           id: 'mt5-bridge',
           name: 'MT5 Bridge',
           status: 'offline',
-          message: 'Bridge not responding',
+          message: `Bridge not responding (${response.status})`,
           lastChecked: new Date(),
         };
       } catch (error: any) {
+        console.error('[SystemStatus] Bridge check error:', error);
+
+        const triedUrl = getBridgeUrl('/health');
+        const isPageHttps =
+          typeof window !== 'undefined' && window.location.protocol === 'https:';
+        const triedLocalhost =
+          /localhost|127\.0\.0\.1/i.test(triedUrl);
+
+        let hint = '';
+        if (isPageHttps && triedLocalhost) {
+          hint =
+            ' This HTTPS site cannot use http://localhost:8080 from your browser. Run Cloudflare Tunnel or ngrok on your PC, then open the dashboard with ?bridge_url=https://YOUR-TUNNEL (no trailing slash).';
+        } else if (isPageHttps) {
+          hint =
+            ' Check the tunnel URL, CORS, and that the bridge is running (see browser console for the exact URL).';
+        }
+
         if (error.name === 'AbortError') {
           return {
             id: 'mt5-bridge',
             name: 'MT5 Bridge',
             status: 'offline',
-            message: 'Connection timeout',
+            message: `Connection timeout.${hint}`.trim(),
             lastChecked: new Date(),
           };
         }
@@ -188,7 +216,7 @@ export function SystemStatus() {
           id: 'mt5-bridge',
           name: 'MT5 Bridge',
           status: 'offline',
-          message: 'Bridge not running',
+          message: `Bridge not reachable (${error.message || 'network error'}).${hint}`.trim(),
           lastChecked: new Date(),
         };
       }
@@ -249,8 +277,8 @@ export function SystemStatus() {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-        // Test with a simple CPI endpoint
-        const response = await fetch('/api/tradingeconomics/cpi?country=united-states', {
+        // Test with a simple CPI endpoint (use currency parameter, not country)
+        const response = await fetch('/api/tradingeconomics/cpi?currency=USD', {
           method: 'GET',
           signal: controller.signal,
         });

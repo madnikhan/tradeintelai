@@ -90,11 +90,12 @@ if (-not (Test-Path -LiteralPath $bridgePy)) {
   Write-Host "Bridge file not found: $bridgePy" -ForegroundColor Red
   Write-Host ""
   Write-Host "This folder is NOT C:\Windows and NOT C:\Users\windows." -ForegroundColor Yellow
-  Write-Host "Scripts must live at:  <your-clone>\mt5-bridge\windows\" -ForegroundColor Yellow
+  # Single-quoted: avoids PowerShell parsing '<' and trailing '\' before '"' as broken strings
+  Write-Host 'Scripts must live at:  YOUR_CLONE\mt5-bridge\windows' -ForegroundColor Yellow
   Write-Host "You need the full repo (at least the mt5-bridge folder with wine-mt5-connector.py)." -ForegroundColor Yellow
   Write-Host ""
-  Write-Host "To run:  cd <your-clone>   then   .\mt5-bridge\windows\StartBridge.bat" -ForegroundColor Gray
-  Write-Host "Do not use:  cd StartBridge.bat   (use .\StartBridge.bat to RUN it)" -ForegroundColor Gray
+  Write-Host 'To run:  cd YOUR_CLONE  then  .\mt5-bridge\windows\StartBridge.bat' -ForegroundColor Gray
+  Write-Host 'Do not use:  cd StartBridge.bat  (use .\StartBridge.bat to RUN it)' -ForegroundColor Gray
   Write-Host ""
   Write-Host "Or set repo path, then run this script from anywhere:" -ForegroundColor Yellow
   Write-Host '  $env:TRADEINTELAI_ROOT = "C:\Users\Admin\tradeintelai"' -ForegroundColor Gray

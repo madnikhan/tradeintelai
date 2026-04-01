@@ -149,6 +149,21 @@ Vercel only serves the website. Your browser must reach the bridge running on yo
 
 **Not supported:** expecting Vercel’s servers to call `localhost` on your PC — that will never work.
 
+### ngrok on Windows (Vercel + bridge)
+
+1. Download **`ngrok.exe`** from [ngrok.com/download](https://ngrok.com/download), then either add its folder to **PATH** or run it by full path, e.g. `C:\Users\Admin\Downloads\ngrok.exe`.
+2. One-time: `ngrok config add-authtoken YOUR_TOKEN` (from [dashboard.ngrok.com](https://dashboard.ngrok.com/)).
+3. Start the **MT5 bridge** first so something is listening on **8080**.
+4. **Random URL each time (simplest):**  
+   `ngrok http 8080`  
+   Use the **https://….ngrok-free.app** URL printed in the terminal with  
+   `?bridge_url=https://….ngrok-free.app` (no trailing slash).
+5. **Reserved free/paid hostname** (ngrok v3): **`--domain` is deprecated** — use **`--url`** instead, for example:  
+   `ngrok http --url=https://YOUR-SUBDOMAIN.ngrok-free.dev 8080`  
+   or (if your ngrok build accepts hostname only):  
+   `ngrok http --url=YOUR-SUBDOMAIN.ngrok-free.dev 8080`  
+   Run `ngrok http --help` on your PC to match your installed version.
+
 ### Prereqs
 
 - Install **Python 3.10+** for Windows from **[python.org](https://www.python.org/downloads/windows/)** (not only the Microsoft Store prompt). In the installer, enable **Add python.exe to PATH** and the **py launcher**.

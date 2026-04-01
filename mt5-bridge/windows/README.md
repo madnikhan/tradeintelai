@@ -2,6 +2,44 @@
 
 This folder contains Windows launch scripts for the MT5 file-based HTTP bridge.
 
+### Quick start (do these in order)
+
+1. **Get the project on your PC**  
+   - **ZIP:** [github.com/madnikhan/tradeintelai](https://github.com/madnikhan/tradeintelai) → **Code → Download ZIP** → extract so you have `...\tradeintelai\` with `mt5-bridge` inside.  
+   - Or **git clone** if Git works.
+
+2. **Install real Python (not only the Store stub)**  
+   - From [python.org/downloads/windows](https://www.python.org/downloads/windows/): enable **Add python.exe to PATH** and **py launcher**.  
+   - Optional: **Settings → Apps → App execution aliases** → turn **off** `python.exe` / `python3.exe` if the bridge still hits the Store message.
+
+3. **Pin stable Python if you have 3.13 and 3.15 alpha** (PowerShell, before starting the bridge):  
+   `$env:MT5_PYTHON_VERSION = "3.13"`
+
+4. **MetaTrader 5**  
+   - Install/open **MT5** once.  
+   - In MT5: **File → Open Data Folder** → confirm **`MQL5\Files`** exists (create **Files** if missing).  
+   - Copy **`mt5-bridge\MT5FileBridgeEA.mq5`** into MT5’s **Experts** folder, compile in MetaEditor (**F7**), attach the EA to a chart.
+
+5. **Set MT5 file folder for the bridge** (PowerShell — use **your** path from “Open Data Folder”):  
+   `$env:MT5_FILES_DIR = "$env:APPDATA\MetaQuotes\Terminal\<YOUR_HASH>\MQL5\Files"`  
+   Or skip this if the script auto-detects it.
+
+6. **Never use placeholder text** in `MT5_FILES_DIR`. If you set a bad value:  
+   `Remove-Item Env:MT5_FILES_DIR -ErrorAction SilentlyContinue`
+
+7. **Start the bridge** (replace path if yours differs):  
+   `cd $env:USERPROFILE\tradeintelai`  
+   `.\mt5-bridge\windows\StartBridge.bat`  
+   Do **not** use `cd StartBridge.bat` — that is wrong.
+
+8. **Check it**  
+   - Browser: [http://localhost:8080/health](http://localhost:8080/health) should return JSON with `"status":"running"`.
+
+9. **Use the Vercel site with your PC**  
+   - Expose port **8080** with **Cloudflare Tunnel** or **ngrok** (HTTPS URL).  
+   - Open: `https://tradeintelai.vercel.app/dashboard?bridge_url=https://YOUR-TUNNEL`  
+   - No tunnel + same PC only: you may use `http://localhost:8080` if the browser allows it.
+
 ### Important: where to run from
 
 - You need the **full project** (the `tradeintelai` repo), not only this `windows` folder.

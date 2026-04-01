@@ -50,6 +50,13 @@ if (-not $env:MT5_FILES_DIR -or $env:MT5_FILES_DIR.Trim().Length -eq 0) {
   Write-Host "Using MT5_FILES_DIR: $($env:MT5_FILES_DIR)"
 }
 
+if ($env:MT5_FILES_DIR -match 'PASTE_|HERE$|\\Files_HERE') {
+  Write-Host "MT5_FILES_DIR looks like a placeholder. Clear it or set a real path, e.g.:" -ForegroundColor Red
+  Write-Host '  Remove-Item Env:MT5_FILES_DIR' -ForegroundColor Gray
+  Write-Host '  $env:MT5_FILES_DIR = "$env:APPDATA\MetaQuotes\Terminal\E3E3B02889D32F38295D39BF94B6AD4A\MQL5\Files"' -ForegroundColor Gray
+  exit 1
+}
+
 # Repo root: either TRADEINTELAI_ROOT (if you moved scripts) or ...\tradeintelai (two levels up from this folder)
 if ($env:TRADEINTELAI_ROOT -and $env:TRADEINTELAI_ROOT.Trim().Length -gt 0) {
   $repoRoot = (Resolve-Path -LiteralPath $env:TRADEINTELAI_ROOT.Trim()).Path
@@ -88,9 +95,11 @@ $logsDir = Join-Path $PSScriptRoot "logs"
 New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
 
 $ts = Get-Date -Format "yyyyMMdd-HHmmss"
-$logFile = Join-Path $logsDir "bridge-$ts.log"
-# Ensure log file exists so tail does not fail
-New-Item -ItemType File -Force -Path $logFile | Out-Null
+# PowerShell Start-Process cannot use the same path for stdout and stderr
+$logOut = Join-Path $logsDir "bridge-$ts.out.log"
+$logErr = Join-Path $logsDir "bridge-$ts.err.log"
+New-Item -ItemType File -Force -Path $logOut | Out-Null
+New-Item -ItemType File -Force -Path $logErr | Out-Null
 
 if (-not $env:MT5_BRIDGE_PORT -or $env:MT5_BRIDGE_PORT.Trim().Length -eq 0) {
   $env:MT5_BRIDGE_PORT = "8080"
@@ -100,7 +109,8 @@ Write-Host "Repo root:    $repoRoot"
 Write-Host "Bridge dir:   $bridgeDir"
 Write-Host "Python:       $($launch.Exe) $($launch.Args -join ' ')"
 Write-Host "Port:         $($env:MT5_BRIDGE_PORT)"
-Write-Host "Log file:     $logFile"
+Write-Host "Log stdout:   $logOut"
+Write-Host "Log stderr:   $logErr"
 Write-Host ""
 Write-Host "Starting bridge..." -ForegroundColor Green
 
@@ -109,14 +119,16 @@ $argList += $launch.Args
 $argList += $bridgePy
 
 $p = Start-Process -FilePath $launch.Exe -ArgumentList $argList -WorkingDirectory $bridgeDir `
-  -RedirectStandardOutput $logFile -RedirectStandardError $logFile -PassThru -WindowStyle Hidden
+  -RedirectStandardOutput $logOut -RedirectStandardError $logErr -PassThru -WindowStyle Hidden
 
 Start-Sleep -Seconds 2
 
 if ($p.HasExited) {
   Write-Host "Bridge process exited immediately (exit code: $($p.ExitCode))." -ForegroundColor Red
-  Write-Host "Log output:" -ForegroundColor Yellow
-  Get-Content -LiteralPath $logFile -ErrorAction SilentlyContinue
+  Write-Host "--- stdout ---" -ForegroundColor Yellow
+  Get-Content -LiteralPath $logOut -ErrorAction SilentlyContinue
+  Write-Host "--- stderr ---" -ForegroundColor Yellow
+  Get-Content -LiteralPath $logErr -ErrorAction SilentlyContinue
   exit 1
 }
 
@@ -126,8 +138,9 @@ try {
   Write-Host "Health check OK: $($resp.StatusCode) $healthUrl" -ForegroundColor Green
 } catch {
   Write-Host "Health check failed: $($_.Exception.Message)" -ForegroundColor Yellow
-  Write-Host "If Python failed, read: $logFile" -ForegroundColor Yellow
-  Get-Content -LiteralPath $logFile -Tail 40 -ErrorAction SilentlyContinue
+  Write-Host "If Python failed, check: $logOut and $logErr" -ForegroundColor Yellow
+  Get-Content -LiteralPath $logOut -Tail 30 -ErrorAction SilentlyContinue
+  Get-Content -LiteralPath $logErr -Tail 30 -ErrorAction SilentlyContinue
 }
 
 Write-Host ""
@@ -136,7 +149,7 @@ Write-Host "Tailing log (Ctrl+C stops tail only; bridge keeps running):" -Foregr
 Write-Host ""
 
 try {
-  Get-Content -LiteralPath $logFile -Wait -Tail 20
+  Get-Content -LiteralPath $logOut -Wait -Tail 20
 } finally {
   Write-Host ""
   Write-Host "Log tail ended. Bridge may still be running (PID $($p.Id))." -ForegroundColor Gray

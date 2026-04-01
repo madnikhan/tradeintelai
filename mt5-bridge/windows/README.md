@@ -113,7 +113,7 @@ It will:
 
 - auto-detect your MT5 `...\MQL5\Files` folder (or you can set it manually)
 - start the bridge
-- write logs to `mt5-bridge\windows\logs\bridge-*.log`
+- write logs to `mt5-bridge\windows\logs\bridge-*.out.log` and `bridge-*.err.log` (PowerShell requires separate stdout/stderr files)
 - call `GET /health`
 
 ### If the black window flashes and closes (old behaviour)

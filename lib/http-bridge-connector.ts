@@ -2,7 +2,6 @@ import { BRIDGE_CONFIG, getBridgeUrl, retryWithBackoff } from '@/config/bridge-c
 import { logger } from '@/lib/logger';
 
 export class HTTPBridgeConnector {
-  private baseUrl = BRIDGE_CONFIG.baseUrl;
   private connected = false;
 
   /**
@@ -57,34 +56,53 @@ export class HTTPBridgeConnector {
       const timeoutId = setTimeout(() => controller.abort(), BRIDGE_CONFIG.timeouts.account);
       
       try {
-        const response = await fetch(getBridgeUrl('/account'), {
+        const accountUrl = getBridgeUrl('/account');
+        console.log(`🌐 [HTTPBridge] Fetching account from: ${accountUrl}`);
+        console.log(`🌐 [HTTPBridge] Base URL from config: ${BRIDGE_CONFIG.baseUrl}`);
+        
+        const response = await fetch(accountUrl, {
           signal: controller.signal,
-          headers: this.getDefaultHeaders(),
+          headers: {
+            ...this.getDefaultHeaders(),
+            // Note: Cache-Control header removed to avoid CORS issues
+            // Using cache: 'no-cache' option instead
+          },
+          cache: 'no-cache', // Prevent browser caching (doesn't require header)
         });
         clearTimeout(timeoutId);
         
+        console.log(`📡 [HTTPBridge] Response status: ${response.status} ${response.statusText}`);
+        
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          const errorText = await response.text().catch(() => response.statusText);
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
         
-        return await response.json();
+        const data = await response.json();
+        logger.debug('📥 Account info response:', data);
+        return data;
       } catch (error: any) {
         clearTimeout(timeoutId);
         if (error.name === 'AbortError') {
-          throw new Error('Request timeout');
+          throw new Error('Request timeout - bridge may be slow or ngrok tunnel may be down');
         }
         throw error;
       }
     }, {
-      maxAttempts: 2, // Only retry once for account info
+      maxAttempts: 3, // Retry up to 3 times for account info
       onRetry: (attempt, error) => {
         logger.warn(`⏱️ Account info request failed (attempt ${attempt}), retrying...`, error.message);
       }
     }).catch((error: any) => {
+      const bridgeUrl = getBridgeUrl('/account');
       logger.error('⚠️ Error getting account info:', error.message);
+      logger.error(`💡 Bridge URL being used: ${bridgeUrl}`);
+      logger.error('💡 Check: 1) Bridge is running (port 8080), 2) ngrok tunnel is active, 3) EA is attached to chart');
+      logger.error('💡 If using ngrok, verify tunnel is active: curl http://localhost:4040/api/tunnels');
       return {
         success: false,
-        error: 'Failed to get account info - bridge may not be running'
+        error: `Failed to get account info: ${error.message}`,
+        bridgeUrl: bridgeUrl, // Include URL in response for debugging
       };
     });
   }
@@ -123,6 +141,54 @@ export class HTTPBridgeConnector {
       return {
         success: false,
         error: 'Failed to get market data'
+      };
+    });
+  }
+
+  /**
+   * Close a position by ticket ID
+   */
+  async closePosition(ticket: number | string): Promise<any> {
+    return retryWithBackoff(async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), BRIDGE_CONFIG.timeouts.trade || 10000);
+      
+      try {
+        const response = await fetch(getBridgeUrl(`/close-position/${ticket}`), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...this.getDefaultHeaders(),
+          },
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Unknown error');
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        const result = await response.json();
+        return result;
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error('Close position timeout');
+        }
+        throw error;
+      }
+    }, {
+      maxAttempts: 2,
+      onRetry: (attempt) => {
+        logger.debug(`Retrying close position ${ticket} (attempt ${attempt})`);
+      }
+    }).catch((error) => {
+      logger.error(`Error closing position ${ticket}:`, error);
+      return {
+        success: false,
+        error: `Failed to close position: ${error.message}`
       };
     });
   }

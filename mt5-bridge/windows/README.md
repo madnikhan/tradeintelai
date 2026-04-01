@@ -50,6 +50,11 @@ $env:TRADEINTELAI_ROOT = "C:\Users\Admin\tradeintelai"
 
 - Go to C: drive: `cd C:\` (not `cd \C:`)
 - Go to your user folder: `cd $env:USERPROFILE` or `cd C:\Users\YourName`
+- **`cd /tradeintelai`** becomes **`C:\tradeintelai`** (drive root), which usually does not exist. Use e.g. **`cd $env:USERPROFILE\tradeintelai`** or **`cd C:\Users\Admin\tradeintelai`**.
+
+### If MT5 folder was not detected
+
+The bridge can still start; Python falls back to **`mt5-commands`** and **`mt5-responses`** in the **repo root** (same level as the `mt5-bridge` folder). For real MT5 data, open MetaTrader 5 once so `AppData\MetaQuotes\Terminal\...\MQL5\Files` exists, then restart the bridge—or set **`MT5_FILES_DIR`** manually (see below).
 
 ### What it starts
 

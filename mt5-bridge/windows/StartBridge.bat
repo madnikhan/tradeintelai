@@ -16,7 +16,7 @@ if not "%EC%"=="0" (
   echo.
   echo -------------------------------------------
   echo Script exited with error code %EC%.
-  echo Read the messages above (Python path, MT5 folder, or missing repo).
+  echo Read the messages above: Python path, MT5 folder, or missing repo.
   echo If you stopped log tail with Ctrl+C, you can ignore this.
   echo -------------------------------------------
   pause

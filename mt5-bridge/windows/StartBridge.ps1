@@ -39,13 +39,12 @@ if (-not $env:MT5_FILES_DIR -or $env:MT5_FILES_DIR.Trim().Length -eq 0) {
     $env:MT5_FILES_DIR = $detected
     Write-Host "Detected MT5_FILES_DIR: $($env:MT5_FILES_DIR)"
   } else {
-    Write-Host "Could not auto-detect MT5 Files folder." -ForegroundColor Red
-    Write-Host "Open MetaTrader 5 once, then try again; or set manually:" -ForegroundColor Yellow
+    Write-Host "Could not auto-detect MT5 MQL5\Files folder under AppData." -ForegroundColor Yellow
+    Write-Host "Starting bridge anyway: Python will use repo mt5-commands / mt5-responses next to mt5-bridge." -ForegroundColor Yellow
+    Write-Host "For live MT5: install and open MetaTrader 5 once, then restart; or set:" -ForegroundColor Gray
     Write-Host '  $env:MT5_FILES_DIR = "$env:APPDATA\MetaQuotes\Terminal\<HASH>\MQL5\Files"' -ForegroundColor Gray
+    Write-Host "List terminal folders: Get-ChildItem `"$env:APPDATA\MetaQuotes\Terminal`" -Directory" -ForegroundColor Gray
     Write-Host ""
-    Write-Host "Tip: list terminals with:" -ForegroundColor Yellow
-    Write-Host "  Get-ChildItem `"$env:APPDATA\MetaQuotes\Terminal`" -Directory" -ForegroundColor Gray
-    exit 1
   }
 } else {
   Write-Host "Using MT5_FILES_DIR: $($env:MT5_FILES_DIR)"

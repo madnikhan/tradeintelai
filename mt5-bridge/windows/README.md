@@ -98,7 +98,11 @@ Wrong (common mistakes from PowerShell):
 ```powershell
 cd StartBridge.bat
 cd StartBridge.ps1
+.\StartBridge.bat\   # invalid: no trailing \ on a file name
+.\StartBridge        # ambiguous: may run .ps1 only; prefer .bat below
 ```
+
+Use **`.\StartBridge.bat`** (recommended) or **`.\StartBridge.ps1`**. Do not add **`\`** after **`.bat`**. Avoid **`.\StartBridge`** alone so Windows does not pick the wrong file or an old/corrupt script.
 
 ### Scripts only in a random folder?
 

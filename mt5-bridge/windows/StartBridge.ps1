@@ -28,7 +28,7 @@ function Resolve-PythonLaunch {
     if ($env:MT5_PYTHON_VERSION -and $env:MT5_PYTHON_VERSION.Trim().Length -gt 0) {
       $v = $env:MT5_PYTHON_VERSION.Trim()
       if ($v -notmatch '^\d+\.\d+') {
-        Write-Host "MT5_PYTHON_VERSION should be like 3.13 — got: $v" -ForegroundColor Yellow
+        Write-Host "MT5_PYTHON_VERSION should be like 3.13 - got: $v" -ForegroundColor Yellow
       } else {
         $pyVerArg = "-$v"
       }
@@ -130,7 +130,8 @@ if (-not $env:MT5_BRIDGE_PORT -or $env:MT5_BRIDGE_PORT.Trim().Length -eq 0) {
 
 Write-Host "Repo root:    $repoRoot"
 Write-Host "Bridge dir:   $bridgeDir"
-Write-Host "Python:       $($launch.Exe) $($launch.Args -join ' ')"
+$launchArgsDisplay = [string]::Join(' ', @($launch.Args))
+Write-Host "Python:       $($launch.Exe) $launchArgsDisplay"
 Write-Host "Port:         $($env:MT5_BRIDGE_PORT)"
 Write-Host "Log stdout:   $logOut"
 Write-Host "Log stderr:   $logErr"

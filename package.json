@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "bridge": "./start-bridge.sh",
+    "bridge": "node scripts/run-bridge.cjs",
     "multi-bridge": "./start-multi-bridge.sh",
     "dev": "next dev",
     "build": "next build",

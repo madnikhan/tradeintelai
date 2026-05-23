@@ -14,6 +14,8 @@ interface ParserStats {
   lastSuccess?: Date;
   lastFailure?: Date;
   lastError?: string;
+  fallbackUsageCount?: number; // Track how many times fallback values were used
+  lastFallbackUsage?: Date;
 }
 
 export class ParserMonitor {
@@ -28,7 +30,8 @@ export class ParserMonitor {
     success: boolean,
     executionTime: number,
     eventCount: number,
-    error?: string
+    error?: string,
+    usedFallback?: boolean
   ): void {
     const existing = this.stats.get(source) || {
       source,
@@ -38,6 +41,7 @@ export class ParserMonitor {
       averageExecutionTime: 0,
       totalEvents: 0,
       averageEvents: 0,
+      fallbackUsageCount: 0,
     };
 
     if (success) {
@@ -45,6 +49,12 @@ export class ParserMonitor {
       existing.lastSuccess = new Date();
       existing.totalEvents += eventCount;
       existing.averageEvents = existing.totalEvents / existing.successCount;
+      
+      // Track fallback usage
+      if (usedFallback) {
+        existing.fallbackUsageCount = (existing.fallbackUsageCount || 0) + 1;
+        existing.lastFallbackUsage = new Date();
+      }
     } else {
       existing.failureCount++;
       existing.lastFailure = new Date();
@@ -56,6 +66,44 @@ export class ParserMonitor {
     existing.averageExecutionTime = existing.totalExecutionTime / totalRuns;
 
     this.stats.set(source, existing);
+  }
+
+  /**
+   * Record fallback usage (separate from execution record)
+   */
+  static recordFallbackUsage(source: string, currency?: string): void {
+    const key = currency ? `${source}_${currency}` : source;
+    const existing = this.stats.get(key) || {
+      source: key,
+      successCount: 0,
+      failureCount: 0,
+      totalExecutionTime: 0,
+      averageExecutionTime: 0,
+      totalEvents: 0,
+      averageEvents: 0,
+      fallbackUsageCount: 0,
+    };
+
+    existing.fallbackUsageCount = (existing.fallbackUsageCount || 0) + 1;
+    existing.lastFallbackUsage = new Date();
+    this.stats.set(key, existing);
+  }
+
+  /**
+   * Get fallback usage rate for a source
+   */
+  static getFallbackUsageRate(source: string): number {
+    const stats = this.stats.get(source);
+    if (!stats || !stats.successCount) return 0;
+    const fallbackCount = stats.fallbackUsageCount || 0;
+    return (fallbackCount / stats.successCount) * 100;
+  }
+
+  /**
+   * Check if fallback usage is high (threshold: 30% of successful requests)
+   */
+  static isFallbackUsageHigh(source: string, threshold: number = 30): boolean {
+    return this.getFallbackUsageRate(source) >= threshold;
   }
 
   /**

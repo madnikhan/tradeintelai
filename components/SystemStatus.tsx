@@ -1,12 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { isOpenAIConfigured } from '@/lib/openai-service';
+import { useState, useEffect, useCallback, useRef, type MutableRefObject } from 'react';
 import { isFirebaseConfigured } from '@/lib/firebase/config';
-import { httpBridge } from '@/lib/http-bridge-connector';
 import { getBridgeUrl } from '@/config/bridge-config';
-import { getAuth } from 'firebase/auth';
-import { getApp } from '@/lib/firebase/config';
+import {
+  ensureGeminiAvailable,
+  resetGeminiCircuitBreaker,
+} from '@/lib/gemini-circuit-breaker';
+import {
+  ensureOpenAIAvailable,
+  resetOpenAICircuitBreaker,
+} from '@/lib/openai-circuit-breaker';
+import type { AIHealthReason } from '@/lib/ai-types';
+import { getAIProvider } from '@/lib/ai-settings';
+
+const AUTH_BACKOFF_MS = 5 * 60 * 1000;
+const QUOTA_BACKOFF_MS = 2 * 60 * 1000;
 
 interface SystemStatus {
   id: string;
@@ -20,122 +29,160 @@ export function SystemStatus() {
   const [systems, setSystems] = useState<SystemStatus[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const geminiBackoffRef = useRef<{ until: number; cached: SystemStatus | null }>({
+    until: 0,
+    cached: null,
+  });
+  const openAiBackoffRef = useRef<{ until: number; cached: SystemStatus | null }>({
+    until: 0,
+    cached: null,
+  });
 
-  const checkSystemStatus = useCallback(async () => {
+  const checkAIProvider = async (
+    options: {
+      id: string;
+      name: string;
+      healthPath: string;
+      backoffRef: MutableRefObject<{ until: number; cached: SystemStatus | null }>;
+      resetBreaker: () => void;
+      ensureAvailable: () => Promise<boolean>;
+      force?: boolean;
+    }
+  ): Promise<SystemStatus> => {
+    const { id, name, healthPath, backoffRef, resetBreaker, ensureAvailable, force } = options;
+    const now = Date.now();
+
+    if (!force && backoffRef.current.until > now && backoffRef.current.cached) {
+      return {
+        ...backoffRef.current.cached,
+        message: `${backoffRef.current.cached.message} (retry in ${Math.ceil(
+          (backoffRef.current.until - now) / 60000
+        )}m)`,
+        lastChecked: new Date(),
+      };
+    }
+
+    if (force) {
+      resetBreaker();
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const response = await fetch(healthPath, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok && data.ok) {
+        backoffRef.current = { until: 0, cached: null };
+        await ensureAvailable();
+        return {
+          id,
+          name,
+          status: 'online',
+          message: data.message || 'API key valid',
+          lastChecked: new Date(),
+        };
+      }
+
+      if (response.status === 500 && data.message?.includes('missing')) {
+        backoffRef.current = { until: 0, cached: null };
+        return {
+          id,
+          name,
+          status: 'offline',
+          message: data.message || 'API key not configured',
+          lastChecked: new Date(),
+        };
+      }
+
+      const reason = (data.reason as AIHealthReason) || 'error';
+      const message =
+        data.message ||
+        (typeof data.error === 'string' ? data.error : data.error?.message) ||
+        `HTTP ${response.status}`;
+
+      const suffixHint = data.keyFingerprint?.suffix
+        ? ` [server key suffix: …${data.keyFingerprint.suffix}]`
+        : '';
+
+      let displayMessage = `${message}${suffixHint}`;
+      if (reason === 'quota') {
+        displayMessage = `Quota exceeded — try Auto or the other provider.${suffixHint}`;
+      } else if (reason === 'auth') {
+        displayMessage = `Invalid API key.${suffixHint}`;
+      }
+
+      const result: SystemStatus = {
+        id,
+        name,
+        status: reason === 'missing' ? 'offline' : 'error',
+        message: displayMessage,
+        lastChecked: new Date(),
+      };
+
+      if (reason === 'auth' || reason === 'quota') {
+        const backoff = reason === 'quota' ? QUOTA_BACKOFF_MS : AUTH_BACKOFF_MS;
+        backoffRef.current = {
+          until: Date.now() + backoff,
+          cached: result,
+        };
+      } else {
+        backoffRef.current = { until: 0, cached: null };
+      }
+
+      await ensureAvailable();
+      return result;
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return {
+          id,
+          name,
+          status: 'error',
+          message: 'Request timeout',
+          lastChecked: new Date(),
+        };
+      }
+      return {
+        id,
+        name,
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Connection failed',
+        lastChecked: new Date(),
+      };
+    }
+  };
+
+  const checkSystemStatus = useCallback(async (options?: { force?: boolean }) => {
     setIsChecking(true);
     const statuses: SystemStatus[] = [];
 
-    // 1. Check GPT-5.1/OpenAI
-    const checkOpenAI = async (): Promise<SystemStatus> => {
-      const configured = isOpenAIConfigured();
-      if (!configured) {
-        return {
-          id: 'openai',
-          name: 'OpenAI GPT',
-          status: 'offline',
-          message: 'API key not configured',
-          lastChecked: new Date(),
-        };
-      }
+    const checkGemini = () =>
+      checkAIProvider({
+        id: 'gemini',
+        name: 'Gemini AI',
+        healthPath: '/api/gemini/health',
+        backoffRef: geminiBackoffRef,
+        resetBreaker: resetGeminiCircuitBreaker,
+        ensureAvailable: ensureGeminiAvailable,
+        force: options?.force,
+      });
 
-      try {
-        // Get auth token for API authentication
-        let authToken: string | null = null;
-        try {
-          if (typeof window !== 'undefined') {
-            const app = getApp();
-            if (app) {
-              const auth = getAuth(app);
-              const user = auth.currentUser;
-              if (user) {
-                authToken = await user.getIdToken();
-              }
-            }
-          }
-        } catch (authError) {
-          // Auth not available - will show as error
-        }
-
-        // If no auth token, return appropriate status
-        if (!authToken) {
-          return {
-            id: 'openai',
-            name: 'OpenAI GPT',
-            status: 'error',
-            message: 'Sign in required to test',
-            lastChecked: new Date(),
-          };
-        }
-
-        // Test OpenAI API with a simple request
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-        const response = await fetch('/api/openai/chat', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [{ role: 'user', content: 'test' }],
-            max_completion_tokens: 5,
-          }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          return {
-            id: 'openai',
-            name: 'OpenAI GPT',
-            status: 'online',
-            message: 'API responding',
-            lastChecked: new Date(),
-          };
-        } else {
-          const errorData = await response.json().catch(() => ({}));
-          
-          // Handle 401 specifically
-          if (response.status === 401) {
-            return {
-              id: 'openai',
-              name: 'OpenAI GPT',
-              status: 'error',
-              message: 'Authentication failed - sign in again',
-              lastChecked: new Date(),
-            };
-          }
-          
-          return {
-            id: 'openai',
-            name: 'OpenAI GPT',
-            status: 'error',
-            message: errorData.error?.message || `HTTP ${response.status}`,
-            lastChecked: new Date(),
-          };
-        }
-      } catch (error: any) {
-        if (error.name === 'AbortError') {
-          return {
-            id: 'openai',
-            name: 'OpenAI GPT',
-            status: 'error',
-            message: 'Request timeout',
-            lastChecked: new Date(),
-          };
-        }
-        return {
-          id: 'openai',
-          name: 'OpenAI GPT',
-          status: 'error',
-          message: error.message || 'Connection failed',
-          lastChecked: new Date(),
-        };
-      }
-    };
+    const checkOpenAI = () =>
+      checkAIProvider({
+        id: 'openai',
+        name: 'OpenAI GPT',
+        healthPath: '/api/openai/health',
+        backoffRef: openAiBackoffRef,
+        resetBreaker: resetOpenAICircuitBreaker,
+        ensureAvailable: ensureOpenAIAvailable,
+        force: options?.force,
+      });
 
     // 2. Check MT5 Bridge
     const checkMT5Bridge = async (): Promise<SystemStatus> => {
@@ -271,14 +318,13 @@ export function SystemStatus() {
       }
     };
 
-    // 4. Check Trading Economics API
+    // 4. Check Trading Economics (lightweight ping — no CPI scrape)
     const checkTradingEconomics = async (): Promise<SystemStatus> => {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-        // Test with a simple CPI endpoint (use currency parameter, not country)
-        const response = await fetch('/api/tradingeconomics/cpi?currency=USD', {
+        const response = await fetch('/api/health/tradingeconomics', {
           method: 'GET',
           signal: controller.signal,
         });
@@ -286,24 +332,25 @@ export function SystemStatus() {
         clearTimeout(timeoutId);
 
         if (response.ok) {
+          const data = await response.json().catch(() => ({}));
           return {
             id: 'trading-economics',
             name: 'Trading Economics',
             status: 'online',
-            message: 'API responding',
-            lastChecked: new Date(),
-          };
-        } else {
-          return {
-            id: 'trading-economics',
-            name: 'Trading Economics',
-            status: 'error',
-            message: `HTTP ${response.status}`,
+            message: data.message || 'Routes configured',
             lastChecked: new Date(),
           };
         }
-      } catch (error: any) {
-        if (error.name === 'AbortError') {
+
+        return {
+          id: 'trading-economics',
+          name: 'Trading Economics',
+          status: 'error',
+          message: `HTTP ${response.status}`,
+          lastChecked: new Date(),
+        };
+      } catch (error: unknown) {
+        if (error instanceof Error && error.name === 'AbortError') {
           return {
             id: 'trading-economics',
             name: 'Trading Economics',
@@ -322,15 +369,25 @@ export function SystemStatus() {
       }
     };
 
-    // Run all checks in parallel
-    const [openAIStatus, mt5Status, firebaseStatus, teStatus] = await Promise.all([
-      checkOpenAI(),
+    // Run checks — only health-check AI providers selected in Settings
+    const aiProvider = getAIProvider();
+    const checkPromises: Promise<SystemStatus>[] = [];
+
+    if (aiProvider === 'auto' || aiProvider === 'gemini') {
+      checkPromises.push(checkGemini());
+    }
+    if (aiProvider === 'auto' || aiProvider === 'openai') {
+      checkPromises.push(checkOpenAI());
+    }
+
+    const allResults = await Promise.all([
+      ...checkPromises,
       checkMT5Bridge(),
       checkFirebase(),
       checkTradingEconomics(),
     ]);
 
-    statuses.push(openAIStatus, mt5Status, firebaseStatus, teStatus);
+    statuses.push(...allResults);
     setSystems(statuses);
     setIsChecking(false);
   }, []);
@@ -338,8 +395,13 @@ export function SystemStatus() {
   // Check on mount and every 30 seconds
   useEffect(() => {
     checkSystemStatus();
-    const interval = setInterval(checkSystemStatus, 30000); // Check every 30 seconds
-    return () => clearInterval(interval);
+    const interval = setInterval(checkSystemStatus, 30000);
+    const onProviderChange = () => checkSystemStatus({ force: true });
+    window.addEventListener('ai-provider-changed', onProviderChange);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('ai-provider-changed', onProviderChange);
+    };
   }, [checkSystemStatus]);
 
   const getStatusColor = (status: SystemStatus['status']) => {
@@ -411,7 +473,7 @@ export function SystemStatus() {
                   <span>🔌</span> System Status
                 </h3>
                 <button
-                  onClick={checkSystemStatus}
+                  onClick={() => checkSystemStatus({ force: true })}
                   disabled={isChecking}
                   className="p-1.5 rounded-lg bg-[#1e2738] text-gray-400 hover:text-white hover:bg-[#2a3548] transition-all disabled:opacity-50"
                   title="Refresh Status"

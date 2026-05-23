@@ -2,12 +2,12 @@
 
 /**
  * AI Explanation Component
- * Displays OpenAI AI-generated explanations for market analysis
+ * Displays Gemini AI-generated explanations for market analysis
  */
 
 import { useState, useEffect } from 'react';
 import { MarketAnalysis } from '@/lib/ai-trading-engine';
-import { generateAnalysisExplanation, isOpenAIConfigured } from '@/lib/openai-service';
+import { generateAnalysisExplanation, isAIConfigured, getActiveAIProviderLabel } from '@/lib/ai-service';
 
 interface AIExplanationProps {
   analysis: MarketAnalysis;
@@ -29,8 +29,9 @@ export function AIExplanation({ analysis, symbol, onRegenerate }: AIExplanationP
   const [isExpanded, setIsExpanded] = useState(true);
   const [copied, setCopied] = useState(false);
 
-  // Check if OpenAI is configured
-  const isConfigured = isOpenAIConfigured();
+  const [providerLabel, setProviderLabel] = useState('AI');
+
+  const isConfigured = isAIConfigured();
 
   // Generate explanation when analysis changes
   useEffect(() => {
@@ -46,6 +47,7 @@ export function AIExplanation({ analysis, symbol, onRegenerate }: AIExplanationP
         const result = await generateAnalysisExplanation(analysis, symbol);
         if (result) {
           setExplanation(result.explanation);
+          setProviderLabel(getActiveAIProviderLabel());
         } else {
           setError('Failed to generate explanation');
         }
@@ -69,6 +71,7 @@ export function AIExplanation({ analysis, symbol, onRegenerate }: AIExplanationP
       const result = await generateAnalysisExplanation(analysis, symbol);
       if (result) {
         setExplanation(result.explanation);
+        setProviderLabel(getActiveAIProviderLabel());
         if (onRegenerate) {
           onRegenerate();
         }
@@ -106,16 +109,16 @@ export function AIExplanation({ analysis, symbol, onRegenerate }: AIExplanationP
     }
   };
 
-  // Don't render if OpenAI is not configured
+  // Don't render if Gemini is not configured
   if (!isConfigured) {
     return null;
   }
 
   return (
-    <div className="bg-gradient-to-br from-cyan-50/10 to-blue-50/10 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-xl border border-cyan-200/30 dark:border-cyan-800/30 p-4 sm:p-5 mb-4">
+    <div className="bg-gradient-to-br from-cyan-50/10 to-blue-50/10 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-xl border border-cyan-200/30 dark:border-cyan-800/30 p-5 sm:p-6 mb-4 sm:mb-5">
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
           {/* OpenAI Logo */}
           <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="#10A37F"/>
@@ -129,7 +132,7 @@ export function AIExplanation({ analysis, symbol, onRegenerate }: AIExplanationP
             className="w-5 h-5 flex-shrink-0 rounded"
           />
           <span>AI-Powered Analysis</span>
-          <span className="text-xs font-normal text-gray-400">Powered by GPT-5.1</span>
+          <span className="text-xs font-normal text-gray-400">Powered by {providerLabel}</span>
         </h3>
         <div className="flex items-center gap-2">
           <button
@@ -182,7 +185,7 @@ export function AIExplanation({ analysis, symbol, onRegenerate }: AIExplanationP
                     💡 To fix this:
                   </p>
                   <ol className="text-xs text-red-300 list-decimal list-inside space-y-1 ml-2">
-                    <li>Go to <a href="https://platform.openai.com/account/billing" target="_blank" rel="noopener noreferrer" className="underline">OpenAI Billing</a></li>
+                    <li>Get a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="underline">Google AI Studio</a></li>
                     <li>Add payment method or credits</li>
                     <li>Wait a few minutes for activation</li>
                     <li>Try again</li>

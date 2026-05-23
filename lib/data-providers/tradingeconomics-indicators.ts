@@ -6,6 +6,7 @@
 
 import { logger } from '@/lib/logger';
 import { ParserMonitor } from './parser-monitor';
+import { validateEconomicData } from './data-validator';
 
 export interface EconomicIndicator {
   country: string;
@@ -34,6 +35,19 @@ export class TradingEconomicsIndicatorsProvider {
     GDP: 7 * 24 * 60 * 60 * 1000, // 7 days (GDP updates quarterly)
     UNEMPLOYMENT: 7 * 24 * 60 * 60 * 1000, // 7 days (unemployment updates monthly)
   };
+
+  /**
+   * Get base URL for API routes (handles server-side/test contexts)
+   */
+  private static getApiBaseUrl(): string {
+    if (typeof window === 'undefined') {
+      // Server-side or test context - need absolute URL
+      const protocol = process.env.NEXT_PUBLIC_APP_URL?.startsWith('https') ? 'https' : 'http';
+      const host = process.env.NEXT_PUBLIC_APP_URL?.replace(/^https?:\/\//, '') || 'localhost:3000';
+      return `${protocol}://${host}/api/tradingeconomics`;
+    }
+    return '/api/tradingeconomics';
+  }
 
   // Currency to country mapping
   private static readonly CURRENCY_COUNTRY_MAP: Record<string, string> = {
@@ -74,7 +88,8 @@ export class TradingEconomicsIndicatorsProvider {
       const startTime = Date.now();
       
       // Fetch from API route (server-side proxy)
-      const response = await fetch(`/api/tradingeconomics/interest-rate?currency=${currency}`);
+      const baseUrl = this.getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/interest-rate?currency=${currency}`);
       
       if (!response.ok) {
         ParserMonitor.recordExecution('tradingeconomics_interest_rate', false, Date.now() - startTime, 0, 'HTTP error');
@@ -88,6 +103,24 @@ export class TradingEconomicsIndicatorsProvider {
         return null;
       }
 
+      // Validate data freshness and value range
+      const validation = validateEconomicData(
+        data.data.rate,
+        data.data.date,
+        'INTEREST_RATE',
+        currency
+      );
+
+      // Log warnings if validation failed
+      if (!validation.isValid) {
+        logger.warn(`⚠️ Interest rate data validation warnings for ${currency}:`, validation.warnings);
+      }
+
+      // Track fallback usage if detected
+      if (data.data.usedFallback) {
+        ParserMonitor.recordFallbackUsage('tradingeconomics_interest_rate', currency);
+      }
+
       const result: InterestRateData = {
         currency,
         rate: data.data.rate,
@@ -97,9 +130,16 @@ export class TradingEconomicsIndicatorsProvider {
       };
 
       this.cache.set(cacheKey, { data: result, timestamp: Date.now() });
-      ParserMonitor.recordExecution('tradingeconomics_interest_rate', true, Date.now() - startTime, 1);
+      ParserMonitor.recordExecution(
+        'tradingeconomics_interest_rate',
+        true,
+        Date.now() - startTime,
+        1,
+        undefined,
+        data.data.usedFallback
+      );
       
-      logger.debug(`✅ Trading Economics: Interest rate for ${currency} = ${result.rate}%`);
+      logger.debug(`✅ Trading Economics: Interest rate for ${currency} = ${result.rate}% (confidence: ${validation.confidence}%)`);
       return result;
     } catch (error) {
       ParserMonitor.recordExecution('tradingeconomics_interest_rate', false, 0, 0, String(error));
@@ -122,7 +162,8 @@ export class TradingEconomicsIndicatorsProvider {
     try {
       const startTime = Date.now();
       
-      const response = await fetch(`/api/tradingeconomics/cpi?currency=${currency}`);
+      const baseUrl = this.getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/cpi?currency=${currency}`);
       
       if (!response.ok) {
         ParserMonitor.recordExecution('tradingeconomics_cpi', false, Date.now() - startTime, 0, 'HTTP error');
@@ -134,6 +175,24 @@ export class TradingEconomicsIndicatorsProvider {
       if (!data.success || !data.data) {
         ParserMonitor.recordExecution('tradingeconomics_cpi', false, Date.now() - startTime, 0, 'No data');
         return null;
+      }
+
+      // Validate data freshness and value range
+      const validation = validateEconomicData(
+        data.data.value,
+        data.data.date,
+        'CPI',
+        currency
+      );
+
+      // Log warnings if validation failed
+      if (!validation.isValid) {
+        logger.warn(`⚠️ CPI data validation warnings for ${currency}:`, validation.warnings);
+      }
+
+      // Track fallback usage if detected
+      if (data.data.usedFallback) {
+        ParserMonitor.recordFallbackUsage('tradingeconomics_cpi', currency);
       }
 
       const country = this.CURRENCY_COUNTRY_MAP[currency] || currency;
@@ -149,9 +208,16 @@ export class TradingEconomicsIndicatorsProvider {
       };
 
       this.cache.set(cacheKey, { data: result, timestamp: Date.now() });
-      ParserMonitor.recordExecution('tradingeconomics_cpi', true, Date.now() - startTime, 1);
+      ParserMonitor.recordExecution(
+        'tradingeconomics_cpi',
+        true,
+        Date.now() - startTime,
+        1,
+        undefined,
+        data.data.usedFallback
+      );
       
-      logger.debug(`✅ Trading Economics: CPI for ${currency} = ${result.value}%`);
+      logger.debug(`✅ Trading Economics: CPI for ${currency} = ${result.value}% (confidence: ${validation.confidence}%)`);
       return result;
     } catch (error) {
       ParserMonitor.recordExecution('tradingeconomics_cpi', false, 0, 0, String(error));
@@ -174,7 +240,8 @@ export class TradingEconomicsIndicatorsProvider {
     try {
       const startTime = Date.now();
       
-      const response = await fetch(`/api/tradingeconomics/gdp?currency=${currency}`);
+      const baseUrl = this.getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/gdp?currency=${currency}`);
       
       if (!response.ok) {
         ParserMonitor.recordExecution('tradingeconomics_gdp', false, Date.now() - startTime, 0, 'HTTP error');
@@ -186,6 +253,24 @@ export class TradingEconomicsIndicatorsProvider {
       if (!data.success || !data.data) {
         ParserMonitor.recordExecution('tradingeconomics_gdp', false, Date.now() - startTime, 0, 'No data');
         return null;
+      }
+
+      // Validate data freshness and value range
+      const validation = validateEconomicData(
+        data.data.value,
+        data.data.date,
+        'GDP',
+        currency
+      );
+
+      // Log warnings if validation failed
+      if (!validation.isValid) {
+        logger.warn(`⚠️ GDP data validation warnings for ${currency}:`, validation.warnings);
+      }
+
+      // Track fallback usage if detected
+      if (data.data.usedFallback) {
+        ParserMonitor.recordFallbackUsage('tradingeconomics_gdp', currency);
       }
 
       const country = this.CURRENCY_COUNTRY_MAP[currency] || currency;
@@ -201,9 +286,16 @@ export class TradingEconomicsIndicatorsProvider {
       };
 
       this.cache.set(cacheKey, { data: result, timestamp: Date.now() });
-      ParserMonitor.recordExecution('tradingeconomics_gdp', true, Date.now() - startTime, 1);
+      ParserMonitor.recordExecution(
+        'tradingeconomics_gdp',
+        true,
+        Date.now() - startTime,
+        1,
+        undefined,
+        data.data.usedFallback
+      );
       
-      logger.debug(`✅ Trading Economics: GDP for ${currency} = ${result.value}%`);
+      logger.debug(`✅ Trading Economics: GDP for ${currency} = ${result.value}% (confidence: ${validation.confidence}%)`);
       return result;
     } catch (error) {
       ParserMonitor.recordExecution('tradingeconomics_gdp', false, 0, 0, String(error));
@@ -226,7 +318,8 @@ export class TradingEconomicsIndicatorsProvider {
     try {
       const startTime = Date.now();
       
-      const response = await fetch(`/api/tradingeconomics/unemployment?currency=${currency}`);
+      const baseUrl = this.getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/unemployment?currency=${currency}`);
       
       if (!response.ok) {
         ParserMonitor.recordExecution('tradingeconomics_unemployment', false, Date.now() - startTime, 0, 'HTTP error');
@@ -238,6 +331,24 @@ export class TradingEconomicsIndicatorsProvider {
       if (!data.success || !data.data) {
         ParserMonitor.recordExecution('tradingeconomics_unemployment', false, Date.now() - startTime, 0, 'No data');
         return null;
+      }
+
+      // Validate data freshness and value range
+      const validation = validateEconomicData(
+        data.data.value,
+        data.data.date,
+        'UNEMPLOYMENT',
+        currency
+      );
+
+      // Log warnings if validation failed
+      if (!validation.isValid) {
+        logger.warn(`⚠️ Unemployment data validation warnings for ${currency}:`, validation.warnings);
+      }
+
+      // Track fallback usage if detected
+      if (data.data.usedFallback) {
+        ParserMonitor.recordFallbackUsage('tradingeconomics_unemployment', currency);
       }
 
       const country = this.CURRENCY_COUNTRY_MAP[currency] || currency;
@@ -253,9 +364,16 @@ export class TradingEconomicsIndicatorsProvider {
       };
 
       this.cache.set(cacheKey, { data: result, timestamp: Date.now() });
-      ParserMonitor.recordExecution('tradingeconomics_unemployment', true, Date.now() - startTime, 1);
+      ParserMonitor.recordExecution(
+        'tradingeconomics_unemployment',
+        true,
+        Date.now() - startTime,
+        1,
+        undefined,
+        data.data.usedFallback
+      );
       
-      logger.debug(`✅ Trading Economics: Unemployment for ${currency} = ${result.value}%`);
+      logger.debug(`✅ Trading Economics: Unemployment for ${currency} = ${result.value}% (confidence: ${validation.confidence}%)`);
       return result;
     } catch (error) {
       ParserMonitor.recordExecution('tradingeconomics_unemployment', false, 0, 0, String(error));

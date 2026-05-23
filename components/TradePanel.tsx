@@ -9,14 +9,31 @@ import { httpBridge } from '@/lib/http-bridge-connector';
 import { MarketAnalysis } from '@/lib/ai-trading-engine';
 import { MultiAccountExecutor } from '@/lib/multi-account-executor';
 import { accountManager } from '@/lib/account-manager';
+import { assertCanTrade } from '@/lib/trade-permissions';
 import { useRealtimePrice } from '@/lib/use-realtime-price';
+import { useTradingContext } from '@/context/TradingContext';
+import { ConfirmTradeModal } from '@/components/trading/ConfirmTradeModal';
+import { SymbolPicker } from '@/components/trading/SymbolPicker';
+import { toCompactSymbol } from '@/lib/trading-symbols';
 
 interface TradePanelProps {
   aiAnalysis?: MarketAnalysis | null;
+  embedded?: boolean;
 }
 
-export function TradePanel({ aiAnalysis }: TradePanelProps = {}) {
-  const [selectedPair, setSelectedPair] = useState('EURUSD');
+export function TradePanel({ aiAnalysis: aiAnalysisProp, embedded = false }: TradePanelProps = {}) {
+  const { symbol: ctxSymbol, aiAnalysis: ctxAnalysis, setSymbol: setCtxSymbol } = useTradingContext();
+  const aiAnalysis = embedded ? (ctxAnalysis ?? aiAnalysisProp) : (aiAnalysisProp ?? ctxAnalysis);
+  const [localPair, setLocalPair] = useState('EURUSD');
+  const selectedPair = embedded ? ctxSymbol : localPair;
+  const setSelectedPair = embedded ? setCtxSymbol : setLocalPair;
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    variant?: 'danger' | 'warning' | 'primary';
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
   const [direction, setDirection] = useState<TradeDirection>('BUY');
   const [entryPrice, setEntryPrice] = useState('');
   const [stopLoss, setStopLoss] = useState('');
@@ -41,11 +58,14 @@ export function TradePanel({ aiAnalysis }: TradePanelProps = {}) {
     return () => clearInterval(interval);
   }, []);
   
-  const aiRecommendation = aiAnalysis && aiAnalysis.symbol === selectedPair 
+  const symbolMatches = (sym: string | undefined) =>
+    sym && toCompactSymbol(sym) === toCompactSymbol(selectedPair);
+
+  const aiRecommendation = aiAnalysis && symbolMatches(aiAnalysis.symbol)
     ? aiAnalysis.recommendation 
     : null;
   const isAiHold = aiRecommendation === 'HOLD';
-  const aiConfidence = aiAnalysis && aiAnalysis.symbol === selectedPair 
+  const aiConfidence = aiAnalysis && symbolMatches(aiAnalysis.symbol)
     ? aiAnalysis.confidence 
     : null;
   
@@ -60,7 +80,7 @@ export function TradePanel({ aiAnalysis }: TradePanelProps = {}) {
         setEntryPrice(currentPrice.toFixed(5));
         
         // Use AI's stop loss if available, otherwise calculate a default one
-        const aiStopLoss = aiAnalysis && aiAnalysis.symbol === selectedPair
+        const aiStopLoss = aiAnalysis && symbolMatches(aiAnalysis.symbol)
           ? ((aiAnalysis as any).suggestedStopLoss || (aiAnalysis as any).stopLoss)
           : null;
         
@@ -101,7 +121,7 @@ export function TradePanel({ aiAnalysis }: TradePanelProps = {}) {
 
   // Use AI analysis values when available
   useEffect(() => {
-    if (aiAnalysis && aiAnalysis.symbol === selectedPair) {
+    if (aiAnalysis && symbolMatches(aiAnalysis.symbol)) {
       // Update direction to match AI recommendation if it's BUY or SELL
       if (aiAnalysis.recommendation === 'BUY' && direction !== 'BUY') {
         setDirection('BUY');
@@ -128,12 +148,89 @@ export function TradePanel({ aiAnalysis }: TradePanelProps = {}) {
   const stop = parseFloat(stopLoss) || 0;
   
   // Use AI's take profit if available, otherwise calculate
-  const aiTakeProfit = aiAnalysis && aiAnalysis.symbol === selectedPair 
+  const aiTakeProfit = aiAnalysis && symbolMatches(aiAnalysis.symbol)
     ? ((aiAnalysis as any).suggestedTakeProfit || (aiAnalysis as any).takeProfit)
     : null;
   const takeProfit = aiTakeProfit || (entry + (entry - stop) * TRADING_RULES.MIN_REWARD_RISK_RATIO * (direction === 'BUY' ? 1 : -1));
   
   const tradeCalculation = RiskCalculator.calculateTradeSizeSync(entry, stop, selectedPair);
+
+  const doExecuteTrade = async () => {
+    setIsExecuting(true);
+    setLastTradeResult(null);
+    try {
+      const tradingAccounts = accountManager.getTradingAccounts();
+      if (tradingAccounts.length > 1) {
+        const multiResult = await MultiAccountExecutor.executeOnMultipleAccounts({
+          symbol: selectedPair,
+          type: direction,
+          volume: tradeCalculation.lotSize,
+          stopLoss: stop,
+          takeProfit: takeProfit,
+        });
+        setLastTradeResult({
+          success: multiResult.successful > 0,
+          message: `Executed on ${multiResult.successful}/${multiResult.totalAccounts} accounts`,
+          multiAccount: true,
+          results: multiResult.results,
+          successful: multiResult.successful,
+          failed: multiResult.failed,
+        });
+        multiResult.results.forEach((result) => {
+          window.dispatchEvent(new CustomEvent('tradeExecuted', {
+            detail: {
+              symbol: selectedPair,
+              type: direction,
+              volume: tradeCalculation.lotSize,
+              entryPrice: entry,
+              stopLoss: stop,
+              takeProfit,
+              success: result.success,
+              accountId: result.accountId,
+              accountName: result.accountName,
+              orderId: result.orderId,
+              error: result.error,
+              message: result.message,
+            },
+          }));
+        });
+      } else {
+        const permission = await assertCanTrade();
+        if (!permission.allowed) {
+          setLastTradeResult({ success: false, error: permission.error });
+          return;
+        }
+
+        const result = await httpBridge.executeTrade({
+          symbol: selectedPair,
+          type: direction,
+          volume: tradeCalculation.lotSize,
+          stopLoss: stop,
+          takeProfit: takeProfit,
+          accountLogin: permission.accountLogin,
+        });
+        setLastTradeResult(result);
+        window.dispatchEvent(new CustomEvent('tradeExecuted', {
+          detail: {
+            symbol: selectedPair,
+            type: direction,
+            volume: tradeCalculation.lotSize,
+            entryPrice: entry,
+            stopLoss: stop,
+            takeProfit,
+            success: result.success,
+            orderId: result.order_id || result.orderId,
+            error: result.error,
+            message: result.message,
+          },
+        }));
+      }
+    } catch (error) {
+      setLastTradeResult({ success: false, error: 'Trade execution failed' });
+    } finally {
+      setIsExecuting(false);
+    }
+  };
 
   const executeTrade = async () => {
     // Validate entry price and stop loss
@@ -172,142 +269,60 @@ export function TradePanel({ aiAnalysis }: TradePanelProps = {}) {
     
     // CONFIDENCE THRESHOLD: Block weak signals
     // UPDATED: Lowered thresholds to match Opportunity Scanner (65+ score, 55%+ confidence)
+    // NOTE: Using >= for threshold checks (score >= 65.0 passes, score < 65.0 fails)
     const MIN_SCORE = 65; // Minimum overall score to execute (lowered from 70)
     const MIN_CONFIDENCE = 55; // Minimum confidence percentage (lowered from 60)
     
     if (aiAnalysis) {
       if (aiAnalysis.overallScore < MIN_SCORE) {
-        const confirmTrade = window.confirm(
-          `⚠️ WARNING: Weak Signal\n\n` +
-          `AI Score: ${aiAnalysis.overallScore}/100 (minimum: ${MIN_SCORE})\n` +
-          `Confidence: ${aiAnalysis.confidence}%\n` +
-          `Recommendation: ${aiAnalysis.recommendation}\n\n` +
-          `The AI signal is too weak. Trading now may result in losses.\n\n` +
-          `Do you still want to proceed with this ${direction} trade?`
-        );
-        if (!confirmTrade) return;
+        setConfirmModal({
+          open: true,
+          title: 'Weak signal',
+          message: `AI Score: ${aiAnalysis.overallScore}/100 (minimum: ${MIN_SCORE}). Proceed with ${direction}?`,
+          variant: 'warning',
+          onConfirm: () => {
+            setConfirmModal((m) => ({ ...m, open: false }));
+            void doExecuteTrade();
+          },
+        });
+        return;
       }
-      
       if (aiAnalysis.confidence < MIN_CONFIDENCE) {
-        const confirmTrade = window.confirm(
-          `⚠️ WARNING: Low Confidence\n\n` +
-          `AI Confidence: ${aiAnalysis.confidence}% (minimum: ${MIN_CONFIDENCE}%)\n` +
-          `Score: ${aiAnalysis.overallScore}/100\n` +
-          `Recommendation: ${aiAnalysis.recommendation}\n\n` +
-          `The AI is not confident enough in this trade.\n\n` +
-          `Do you still want to proceed with this ${direction} trade?`
-        );
-        if (!confirmTrade) return;
+        setConfirmModal({
+          open: true,
+          title: 'Low confidence',
+          message: `AI Confidence: ${aiAnalysis.confidence}% (minimum: ${MIN_CONFIDENCE}%). Proceed?`,
+          variant: 'warning',
+          onConfirm: () => {
+            setConfirmModal((m) => ({ ...m, open: false }));
+            void doExecuteTrade();
+          },
+        });
+        return;
       }
     }
     
     if (isAiHold) {
-      const confirmTrade = window.confirm(
-        `⚠️ WARNING: AI recommends HOLD for ${selectedPair} (Confidence: ${aiConfidence}%)\n\n` +
-        `The AI analysis suggests not trading this pair right now.\n\n` +
-        `Do you still want to proceed with this ${direction} trade?`
-      );
-      if (!confirmTrade) return;
-    }
-    
-    setIsExecuting(true);
-    setLastTradeResult(null);
-    
-    try {
-      // Check if multiple accounts are selected for trading
-      const tradingAccounts = accountManager.getTradingAccounts();
-      
-      if (tradingAccounts.length > 1) {
-        // Execute on multiple accounts
-        const multiResult = await MultiAccountExecutor.executeOnMultipleAccounts({
-          symbol: selectedPair,
-          type: direction,
-          volume: tradeCalculation.lotSize,
-          stopLoss: stop,
-          takeProfit: takeProfit
-        });
-
-        // Format result for display
-        const successCount = multiResult.successful;
-        const totalCount = multiResult.totalAccounts;
-        
-        setLastTradeResult({
-          success: successCount > 0,
-          message: `Executed on ${successCount}/${totalCount} accounts`,
-          multiAccount: true,
-          results: multiResult.results,
-          successful: successCount,
-          failed: multiResult.failed,
-        });
-
-        // Log execution to TradeExecutionLog
-        multiResult.results.forEach((result) => {
-          window.dispatchEvent(new CustomEvent('tradeExecuted', {
-            detail: {
-              symbol: selectedPair,
-              type: direction,
-              volume: tradeCalculation.lotSize,
-              entryPrice: entry,
-              stopLoss: stop,
-              takeProfit: takeProfit,
-              success: result.success,
-              accountId: result.accountId,
-              accountName: result.accountName,
-              orderId: result.orderId,
-              error: result.error,
-              message: result.message,
-            }
-          }));
-        });
-
-        console.log(`✅ Multi-account trade: ${successCount}/${totalCount} successful`, multiResult);
-      } else {
-        // Single account execution (original behavior)
-        const result = await httpBridge.executeTrade({
-          symbol: selectedPair,
-          type: direction,
-          volume: tradeCalculation.lotSize,
-          stopLoss: stop,
-          takeProfit: takeProfit
-        });
-
-        setLastTradeResult(result);
-        
-        // Log execution to TradeExecutionLog
-        window.dispatchEvent(new CustomEvent('tradeExecuted', {
-          detail: {
-            symbol: selectedPair,
-            type: direction,
-            volume: tradeCalculation.lotSize,
-            entryPrice: entry,
-            stopLoss: stop,
-            takeProfit: takeProfit,
-            success: result.success,
-            orderId: result.order_id || result.orderId,
-            error: result.error,
-            message: result.message,
-          }
-        }));
-        
-        if (result.success) {
-          console.log('✅ Trade executed successfully:', result);
-        } else {
-          console.error('❌ Trade failed:', result.error);
-        }
-      }
-    } catch (error) {
-      console.error('Trade execution error:', error);
-      setLastTradeResult({
-        success: false,
-        error: 'Trade execution failed - check console for details'
+      setConfirmModal({
+        open: true,
+        title: 'AI recommends HOLD',
+        message: `AI recommends HOLD for ${selectedPair}. Proceed with ${direction}?`,
+        variant: 'danger',
+        onConfirm: () => {
+          setConfirmModal((m) => ({ ...m, open: false }));
+          void doExecuteTrade();
+        },
       });
-    } finally {
-      setIsExecuting(false);
+      return;
     }
+    
+    await doExecuteTrade();
   };
 
   return (
-    <div className="p-6">
+    <div className={embedded ? 'p-4' : 'p-6'}>
+      {!embedded && (
+      <>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -321,9 +336,17 @@ export function TradePanel({ aiAnalysis }: TradePanelProps = {}) {
           {isLoadingPrice ? '↻ Loading...' : '↻ Refresh Price'}
         </button>
       </div>
+      </>
+      )}
+
+      {embedded && !symbolMatches(aiAnalysis?.symbol) && (
+        <div className="mb-4 p-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-sm text-cyan-300">
+          Run analysis for {selectedPair} in the panel above to load AI levels.
+        </div>
+      )}
 
       {/* AI Recommendation Warning */}
-      {aiAnalysis && aiAnalysis.symbol === selectedPair && (
+      {aiAnalysis && symbolMatches(aiAnalysis.symbol) && (
         <div className={`mb-6 p-4 rounded-xl border ${
           isAiHold 
             ? 'bg-yellow-500/10 border-yellow-500/30' 
@@ -359,30 +382,16 @@ export function TradePanel({ aiAnalysis }: TradePanelProps = {}) {
       )}
 
       {/* Pair Selection */}
+      {!embedded && (
       <div className="mb-4">
-        <label className="block text-xs text-gray-500 mb-2">Trading Pair</label>
-        <select 
+        <label htmlFor="trade-panel-symbol" className="label block mb-2">Trading instrument</label>
+        <SymbolPicker
           value={selectedPair}
-          onChange={(e) => setSelectedPair(e.target.value)}
-          className="w-full px-4 py-3 bg-[#141c2b] border border-[#1e2738] rounded-xl text-white font-medium focus:outline-none focus:border-cyan-500"
-        >
-          <optgroup label="Major Pairs">
-            <option value="EURUSD">EUR/USD</option>
-            <option value="GBPUSD">GBP/USD</option>
-            <option value="USDJPY">USD/JPY</option>
-            <option value="USDCHF">USD/CHF</option>
-            <option value="AUDUSD">AUD/USD</option>
-            <option value="USDCAD">USD/CAD</option>
-            <option value="NZDUSD">NZD/USD</option>
-          </optgroup>
-          <optgroup label="Cross Pairs">
-            <option value="EURGBP">EUR/GBP</option>
-            <option value="EURJPY">EUR/JPY</option>
-            <option value="GBPJPY">GBP/JPY</option>
-            <option value="AUDJPY">AUD/JPY</option>
-          </optgroup>
-        </select>
+          onChange={setSelectedPair}
+          compact
+        />
       </div>
+      )}
 
       {/* Direction Buttons */}
       <div className="mb-4">
@@ -595,9 +604,18 @@ export function TradePanel({ aiAnalysis }: TradePanelProps = {}) {
       </button>
 
       {/* Mode Indicator */}
-      <p className="text-center text-xs text-gray-600 mt-3">
-        {TradingModeManager.isDemoMode() ? '🔒 Demo Mode' : '🚀 Live Trading'}
+      <p className="text-center text-xs text-tertiary mt-3">
+        {TradingModeManager.isDemoMode() ? 'Demo mode' : 'Live trading'}
       </p>
+
+      <ConfirmTradeModal
+        open={confirmModal.open}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        variant={confirmModal.variant}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal((m) => ({ ...m, open: false }))}
+      />
     </div>
   );
 }

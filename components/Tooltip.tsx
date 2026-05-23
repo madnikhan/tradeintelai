@@ -135,6 +135,7 @@ interface MetricTooltipProps {
 export function MetricTooltip({ metric, description, formula, children }: MetricTooltipProps) {
   return (
     <Tooltip
+      className="block w-full min-w-0"
       content={
         <div className="space-y-1">
           <div className="font-bold text-cyan-400">{metric}</div>

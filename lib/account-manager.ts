@@ -235,6 +235,33 @@ class AccountManager {
   }
 
   /**
+   * Merge Firestore-visible MT5 accounts into local storage (by login).
+   */
+  async syncFromFirestore(): Promise<void> {
+    if (typeof window === 'undefined') return;
+    try {
+      const { listVisibleMt5Accounts } = await import('./firebase/mt5-accounts');
+      const remote = await listVisibleMt5Accounts();
+      for (const r of remote) {
+        const existing = this.accounts.find((a) => a.login === r.login);
+        if (existing) {
+          existing.name = r.name;
+          existing.server = r.server;
+        } else {
+          this.addAccount({
+            name: r.name,
+            login: r.login,
+            server: r.server,
+          });
+        }
+      }
+      this.saveAccounts();
+    } catch (e) {
+      console.warn('accountManager.syncFromFirestore:', e);
+    }
+  }
+
+  /**
    * Clear all trading accounts
    */
   clearTradingAccounts(): void {

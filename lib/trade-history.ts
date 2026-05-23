@@ -33,7 +33,12 @@ export interface MT5Deal {
 export async function fetchTradeHistory(): Promise<Trade[]> {
   try {
     // Try to get closed positions from MT5 bridge
-    const response = await fetch(getBridgeUrl('/closed-positions'));
+    const response = await fetch(getBridgeUrl('/closed-positions'), {
+      headers: {
+        'Accept': 'application/json',
+        'ngrok-skip-browser-warning': 'true', // Skip ngrok free tier browser warning
+      },
+    });
     if (response.ok) {
       const data = await response.json();
       if (data.success && data.positions && data.positions.length > 0) {

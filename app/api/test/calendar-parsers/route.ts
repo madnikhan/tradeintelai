@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireApiAuth } from '@/lib/with-auth';
 import { ForexFactoryRSSProvider } from '@/lib/data-providers/forexfactory-rss';
 import { InvestingCalendarProvider } from '@/lib/data-providers/investing-calendar';
 import { TradingEconomicsCalendarProvider } from '@/lib/data-providers/tradingeconomics-calendar';
@@ -13,6 +14,9 @@ export const dynamic = 'force-dynamic';
  * Tests all parsers and returns detailed results
  */
 export async function GET(request: NextRequest) {
+  const authError = await requireApiAuth(request);
+  if (authError) return authError;
+
   const startTime = Date.now();
   const results: any = {
     timestamp: new Date().toISOString(),

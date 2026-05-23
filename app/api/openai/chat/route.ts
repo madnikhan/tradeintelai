@@ -1,61 +1,67 @@
-/**
- * OpenAI API Proxy Route
- * Proxies requests to OpenAI API with authentication
- * SECURITY: Requires Firebase Auth token, uses server-side API key only
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyApiAuth } from '@/lib/api-auth';
+import { generateOpenAIText, generateOpenAIWithImage } from '@/lib/openai-client';
+import { getOpenAIKeyFromEnv } from '@/lib/openai-key-fingerprint';
+import type { AIChatBody } from '@/lib/ai-types';
 
 export async function POST(request: NextRequest) {
-  // Verify authentication
   const auth = await verifyApiAuth(request);
   if (!auth.authorized) {
     return NextResponse.json(
-      { error: auth.error || 'Unauthorized' },
+      { error: auth.error || 'Unauthorized', source: 'firebase' },
       { status: 401 }
     );
   }
 
+  let body: AIChatBody;
   try {
-    const body = await request.json();
-    
-    // Use server-side only API key (prefer OPENAI_API_KEY, fallback to NEXT_PUBLIC_ for backward compatibility)
-    const apiKey = process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured. Please set OPENAI_API_KEY in .env.local' },
-        { status: 500 }
-      );
+    const text = await request.text();
+    if (!text?.trim()) {
+      return NextResponse.json({ error: 'Request body is required' }, { status: 400 });
     }
+    body = JSON.parse(text) as AIChatBody;
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
 
-    // Forward request to OpenAI API
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
+  if (!body.user?.trim()) {
+    return NextResponse.json({ error: 'user prompt is required' }, { status: 400 });
+  }
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: data.error || 'OpenAI API error', status: response.status },
-        { status: response.status }
-      );
-    }
-
-    return NextResponse.json(data);
-  } catch (error: any) {
-    console.error('OpenAI proxy error:', error);
+  if (!getOpenAIKeyFromEnv()) {
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      {
+        error: 'OpenAI API key not configured. Set OPENAI_API_KEY in .env.local.',
+        source: 'openai',
+      },
       { status: 500 }
     );
   }
-}
 
+  try {
+    const mode = body.mode || (body.imageBase64 ? 'vision' : 'text');
+    const result =
+      mode === 'vision' && body.imageBase64
+        ? await generateOpenAIWithImage({
+            system: body.system,
+            user: body.user,
+            imageBase64: body.imageBase64,
+            json: body.json,
+          })
+        : await generateOpenAIText({
+            system: body.system,
+            user: body.user,
+            json: body.json,
+          });
+
+    return NextResponse.json({ text: result.text });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    console.error('OpenAI proxy error:', message);
+    const lower = message.toLowerCase();
+    const isAuth = lower.includes('incorrect api key') || lower.includes('invalid api key');
+    const isQuota = lower.includes('quota') || lower.includes('rate limit');
+    const status = isAuth ? 401 : isQuota ? 429 : 500;
+    return NextResponse.json({ error: message, source: 'openai' }, { status });
+  }
+}

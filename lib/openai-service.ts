@@ -6,16 +6,21 @@
 import { MarketAnalysis } from './ai-trading-engine';
 import { getAuth } from 'firebase/auth';
 import { getApp } from './firebase/config';
+import { formatOpenAIProxyErrorForUser } from './openai-api-errors';
+import {
+  ensureOpenAIAvailable,
+  isOpenAIAvailableSync,
+} from './openai-circuit-breaker';
 
-interface GPTExplanation {
+interface AIExplanationContent {
   summary: string;
   keyPoints: string[];
   riskFactors: string[];
   recommendation: string;
 }
 
-interface GPTResponse {
-  explanation: GPTExplanation;
+interface AIExplanationResponse {
+  explanation: AIExplanationContent;
   rawText: string;
 }
 
@@ -49,7 +54,7 @@ interface ChartAnalysis {
 }
 
 // ENHANCED: Comprehensive caching system
-const explanationCache = new Map<string, { data: GPTResponse; timestamp: number }>();
+const explanationCache = new Map<string, { data: AIExplanationResponse; timestamp: number }>();
 const sentimentCache = new Map<string, { data: number; timestamp: number }>();
 const chartAnalysisCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -57,15 +62,54 @@ const SENTIMENT_CACHE_DURATION = 10 * 60 * 1000; // 10 minutes (sentiment change
 const CHART_CACHE_DURATION = 2 * 60 * 1000; // 2 minutes (charts change faster)
 
 /**
- * Check if OpenAI is configured
+ * Check if OpenAI is configured and available (client uses circuit breaker from /api/openai/health).
  */
 export function isOpenAIConfigured(): boolean {
-  // Check server-side only (client will call API route)
   if (typeof window === 'undefined') {
-    return !!process.env.OPENAI_API_KEY;
+    return !!process.env.OPENAI_API_KEY?.trim();
   }
-  // Client-side: always assume configured (will fail gracefully if not)
-  return true;
+  return isOpenAIAvailableSync();
+}
+
+async function assertOpenAIAvailable(): Promise<boolean> {
+  if (typeof window === 'undefined') {
+    return !!process.env.OPENAI_API_KEY?.trim();
+  }
+  return ensureOpenAIAvailable();
+}
+
+function handleOpenAIProxyFailure(status: number, errorData: Record<string, unknown>): never {
+  throw new Error(formatOpenAIProxyErrorForUser(status, errorData));
+}
+
+async function callOpenAIApi(
+  body: {
+    mode: 'text' | 'vision';
+    system?: string;
+    user: string;
+    imageBase64?: string;
+    json?: boolean;
+  },
+  authToken?: string | null
+): Promise<string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
+
+  const response = await fetch('/api/openai/chat', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+    handleOpenAIProxyFailure(response.status, errorData as Record<string, unknown>);
+  }
+
+  const data = await response.json();
+  return data.text || '';
 }
 
 /**
@@ -113,9 +157,9 @@ async function getAuthToken(): Promise<string | null> {
 export async function generateAnalysisExplanation(
   analysis: MarketAnalysis,
   symbol: string
-): Promise<GPTResponse | null> {
-  if (!isOpenAIConfigured()) {
-    console.warn('⚠️ OpenAI not configured - skipping AI explanation');
+): Promise<AIExplanationResponse | null> {
+  if (!(await assertOpenAIAvailable())) {
+    console.warn('⚠️ OpenAI unavailable — skipping AI explanation');
     return null;
   }
 
@@ -143,62 +187,20 @@ export async function generateAnalysisExplanation(
     // Build prompt
     const prompt = buildAnalysisPrompt(analysis, symbol);
 
-    // Call OpenAI API via Next.js API route (with authentication)
-    const response = await fetch('/api/openai/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`,
+    const gptText = await callOpenAIApi(
+      {
+        mode: 'text',
+        system:
+          'You are an expert forex trading analyst. Provide clear, concise, and actionable market analysis explanations. Focus on practical insights traders can use.',
+        user: prompt,
       },
-      body: JSON.stringify({
-        model: 'gpt-5.1', // OpenAI GPT-5.1 model
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert forex trading analyst. Provide clear, concise, and actionable market analysis explanations. Focus on practical insights traders can use.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.7,
-        max_completion_tokens: 500,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-      const errorMessage = errorData.error?.message || errorData.error || 'Unknown error';
-      console.error('OpenAI API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorData,
-      });
-      
-      // Handle specific error cases
-      if (response.status === 401) {
-        throw new Error('Authentication failed. Please sign in again to use AI features.');
-      }
-      
-      if (response.status === 429) {
-        if (errorMessage.includes('quota') || errorMessage.includes('billing')) {
-          throw new Error('OpenAI quota exceeded. Please add billing details or credits to your OpenAI account at https://platform.openai.com/account/billing');
-        } else {
-          throw new Error('OpenAI rate limit exceeded. Please wait a few minutes and try again.');
-        }
-      }
-      
-      throw new Error(`OpenAI API error (${response.status}): ${errorMessage}`);
-    }
-
-    const data = await response.json();
-    const gptText = data.choices[0]?.message?.content || '';
+      authToken
+    );
     
     // Parse OpenAI response
-    const explanation = parseGPTResponse(gptText, analysis);
+    const explanation = parseAIExplanationResponse(gptText, analysis);
 
-    const result: GPTResponse = {
+    const result: AIExplanationResponse = {
       explanation,
       rawText: gptText,
     };
@@ -281,7 +283,7 @@ Provide a clear, concise explanation in this format:
 /**
  * Parse OpenAI response into structured format
  */
-function parseGPTResponse(text: string, analysis: MarketAnalysis): GPTExplanation {
+function parseAIExplanationResponse(text: string, analysis: MarketAnalysis): AIExplanationContent {
   const pair = analysis.recommendation.includes('EUR') ? 'EUR/USD' : 'Currency pair';
   
   // Extract summary
@@ -333,7 +335,7 @@ export function clearExplanationCache(): void {
  * Generate enhanced sentiment analysis using OpenAI
  */
 export async function enhanceSentimentAnalysis(newsArticles: string[]): Promise<number | null> {
-  if (!isOpenAIConfigured() || newsArticles.length === 0) {
+  if (newsArticles.length === 0 || !(await assertOpenAIAvailable())) {
     return null;
   }
 
@@ -370,36 +372,14 @@ Provide:
 
 Format: "Score: X\nExplanation: Y"`;
 
-    // Call OpenAI API via Next.js API route (with authentication)
-    const response = await fetch('/api/openai/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`,
+    const text = await callOpenAIApi(
+      {
+        mode: 'text',
+        system: 'You are a forex market sentiment analyst. Analyze news sentiment and provide scores.',
+        user: prompt,
       },
-      body: JSON.stringify({
-        model: 'gpt-5.1', // Use GPT-5.1 model
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a forex market sentiment analyst. Analyze news sentiment and provide scores.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.5,
-        max_completion_tokens: 150,
-      }),
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    const text = data.choices[0]?.message?.content || '';
+      authToken
+    );
     
     const scoreMatch = text.match(/Score:\s*(\d+)/);
     const explanationMatch = text.match(/Explanation:\s*(.+)/);
@@ -440,8 +420,8 @@ export async function analyzeChartImage(
   timeframe: string,
   currentPrice?: number
 ): Promise<ChartAnalysis | null> {
-  if (!isOpenAIConfigured()) {
-    console.warn('⚠️ OpenAI not configured - skipping chart vision analysis');
+  if (!(await assertOpenAIAvailable())) {
+    console.warn('⚠️ OpenAI unavailable — skipping chart vision analysis');
     return null;
   }
 
@@ -454,15 +434,25 @@ export async function analyzeChartImage(
 
   try {
     // Get auth token for API authentication
+    // 🔒 FIX: Allow GPT vision analysis without auth in dev/test environments
     let authToken: string | null = null;
+    const isDevOrTest = process.env.NODE_ENV === 'development';
+    
     try {
       authToken = await getAuthToken();
     } catch (authError: any) {
-      // If auth error, throw it with a user-friendly message
-      throw new Error(authError.message || 'Authentication required. Please sign in to use AI features.');
+      // In dev/test, allow proceeding without auth (API route will handle it)
+      if (isDevOrTest) {
+        console.warn('⚠️ Firebase auth failed in dev/test - proceeding without auth token for OpenAI vision analysis');
+        authToken = null; // API route will work without auth in dev/test
+      } else {
+        // In production, require auth
+        throw new Error(authError.message || 'Authentication required. Please sign in to use AI features.');
+      }
     }
 
-    if (!authToken) {
+    // Only require auth token in production
+    if (!authToken && !isDevOrTest) {
       throw new Error('User not authenticated. Please sign in to use AI features.');
     }
 
@@ -540,64 +530,17 @@ Format your response as JSON with this structure:
   ]
 }`;
 
-    // Call OpenAI API via Next.js API route (with authentication)
-    const response = await fetch('/api/openai/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`,
+    const jsonText = await callOpenAIApi(
+      {
+        mode: 'vision',
+        system:
+          'You are an expert forex technical analyst specializing in chart pattern recognition. Analyze charts and provide detailed, accurate pattern identification and trading insights. Always respond with valid JSON.',
+        user: prompt,
+        imageBase64,
+        json: true,
       },
-      body: JSON.stringify({
-        model: 'gpt-5.1', // GPT-5.1 with vision capabilities
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert forex technical analyst specializing in chart pattern recognition. Analyze charts and provide detailed, accurate pattern identification and trading insights. Always respond with valid JSON.',
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: prompt,
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:image/png;base64,${imageBase64}`,
-                },
-              },
-            ],
-          },
-        ],
-        temperature: 0.3, // Lower temperature for more consistent pattern recognition
-        max_completion_tokens: 1000,
-        response_format: { type: 'json_object' }, // Force JSON response
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
-      const errorMessage = errorData.error?.message || errorData.message || 'Unknown error';
-      console.error('OpenAI Vision API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorData,
-      });
-      
-      if (response.status === 429) {
-        if (errorMessage.includes('quota') || errorMessage.includes('billing')) {
-          throw new Error('OpenAI quota exceeded. Please add billing details or credits to your OpenAI account at https://platform.openai.com/account/billing');
-        } else {
-          throw new Error('OpenAI rate limit exceeded. Please wait a few minutes and try again.');
-        }
-      }
-      
-      throw new Error(`OpenAI Vision API error (${response.status}): ${errorMessage}`);
-    }
-
-    const data = await response.json();
-    const jsonText = data.choices[0]?.message?.content || '{}';
+      authToken
+    );
     
     try {
       const chartAnalysis: ChartAnalysis = JSON.parse(jsonText);

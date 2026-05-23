@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireApiAuth } from '@/lib/with-auth';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
@@ -10,6 +11,9 @@ const execAsync = promisify(exec);
  * This route calls the Python MT5 integration script
  */
 export async function POST(request: NextRequest) {
+  const authError = await requireApiAuth(request);
+  if (authError) return authError;
+
   try {
     const { accountId, password, server } = await request.json();
     

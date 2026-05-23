@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fileBridge } from '@/lib/file-bridge-connector';
+import { requireApiAuth } from '@/lib/with-auth';
 
 export async function POST(request: NextRequest) {
+  const authError = await requireApiAuth(request);
+  if (authError) return authError;
+
   try {
     console.log('🔗 Testing file bridge connection...');
     

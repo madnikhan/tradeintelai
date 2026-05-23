@@ -3,6 +3,8 @@
  * Analyzes CFTC weekly reports to track smart money positions
  */
 
+import { detectAssetType } from './constants';
+
 export interface COTData {
   symbol: string;
   date: Date;
@@ -43,6 +45,7 @@ export class COTAnalyzer {
    * Fetch COT data for a symbol
    * Uses COTDataProvider for real CFTC data
    * Supports inverse COT logic for USD pairs
+   * Note: COT data is only available for forex pairs
    */
   static async fetchCOTData(symbol: string, weeks: number = 52): Promise<COTData[]> {
     // Check cache
@@ -52,6 +55,15 @@ export class COTAnalyzer {
     }
 
     try {
+      // Detect asset type
+      const assetType = detectAssetType(symbol);
+      
+      // COT data is only available for forex pairs
+      if (assetType !== 'forex') {
+        console.log(`📊 COT data not available for ${symbol} (${assetType}) - COT is forex-only`);
+        return [];
+      }
+      
       const baseCurrency = symbol.slice(0, 3);
       const quoteCurrency = symbol.slice(3, 6);
       
@@ -109,8 +121,19 @@ export class COTAnalyzer {
 
   /**
    * Analyze COT data and generate trading signals
+   * Returns neutral analysis for non-forex assets
    */
   static async analyzeCOT(symbol: string): Promise<COTAnalysis> {
+    // Detect asset type
+    const assetType = detectAssetType(symbol);
+    
+    // COT analysis is only for forex pairs
+    if (assetType !== 'forex') {
+      const neutral = this.getNeutralAnalysis(symbol);
+      neutral.reasoning = [`COT data not available for ${assetType} assets`];
+      return neutral;
+    }
+    
     const cotData = await this.fetchCOTData(symbol);
     
     if (cotData.length === 0) {

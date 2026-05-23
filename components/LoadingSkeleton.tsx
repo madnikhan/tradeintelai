@@ -1,7 +1,7 @@
 'use client';
 
 interface LoadingSkeletonProps {
-  type?: 'card' | 'table' | 'text' | 'circle' | 'metric';
+  type?: 'card' | 'table' | 'text' | 'circle' | 'metric' | 'metric-inline';
   lines?: number;
   className?: string;
 }
@@ -53,6 +53,12 @@ export function LoadingSkeleton({ type = 'card', lines = 3, className = '' }: Lo
   if (type === 'circle') {
     return (
       <div className={`w-12 h-12 bg-[#1e2738] rounded-full animate-pulse ${className}`}></div>
+    );
+  }
+
+  if (type === 'metric-inline') {
+    return (
+      <div className={`h-7 bg-[#1e2738] rounded w-3/4 max-w-[140px] animate-pulse ${className}`} />
     );
   }
 

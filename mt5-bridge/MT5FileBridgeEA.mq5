@@ -137,6 +137,7 @@ void ScanForCommands()
       "price_",
       "trade_",
       "historical_",
+      "close_position_",
       "test_"
    };
    
@@ -394,6 +395,11 @@ string ProcessCommand(string json)
       Print("📊 Getting historical data for: ", symbol, " timeframe: ", timeframe_str, " count: ", count);
       return GetHistoricalDataJSON(symbol, timeframe_str, count);
    }
+   else if(command == "close_position")
+   {
+      Print("🔒 Closing position...");
+      return ClosePositionJSON(json);
+   }
    else
    {
       Print("❌ Unknown command: ", command);
@@ -599,6 +605,74 @@ string ExecuteTradeJSON(string json)
    double sl = (sl_str != "") ? StringToDouble(sl_str) : 0;
    double tp = (tp_str != "") ? StringToDouble(tp_str) : 0;
    
+   // CRITICAL FIX: Validate and adjust stop loss/take profit to meet broker STOPLEVEL requirements
+   // Get broker's minimum stop level (in points)
+   int stopLevel = (int)SymbolInfoInteger(symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
+   int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+   double minStopDistance = stopLevel * point;
+   
+   // Get current price (will be set properly later, but need it for validation)
+   double ask = SymbolInfoDouble(symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(symbol, SYMBOL_BID);
+   double currentPrice = (action == "BUY") ? ask : bid;
+   
+   // Validate and adjust stop loss if provided
+   if(sl > 0)
+   {
+      double slDistance = MathAbs(currentPrice - sl);
+      
+      // If stop loss is too close, adjust it to meet broker minimum
+      if(slDistance < minStopDistance && minStopDistance > 0)
+      {
+         if(action == "BUY")
+         {
+            // For BUY orders, stop loss must be below entry price
+            sl = NormalizeDouble(currentPrice - minStopDistance, digits);
+         }
+         else // SELL
+         {
+            // For SELL orders, stop loss must be above entry price
+            sl = NormalizeDouble(currentPrice + minStopDistance, digits);
+         }
+         
+         Print("⚠️ Stop loss adjusted to meet broker minimum STOPLEVEL: ", sl, " (distance: ", minStopDistance, ", broker STOPLEVEL: ", stopLevel, " points)");
+      }
+      else
+      {
+         // Normalize stop loss to proper decimal places
+         sl = NormalizeDouble(sl, digits);
+      }
+   }
+   
+   // Validate and adjust take profit if provided
+   if(tp > 0)
+   {
+      double tpDistance = MathAbs(currentPrice - tp);
+      
+      // If take profit is too close, adjust it to meet broker minimum
+      if(tpDistance < minStopDistance && minStopDistance > 0)
+      {
+         if(action == "BUY")
+         {
+            // For BUY orders, take profit must be above entry price
+            tp = NormalizeDouble(currentPrice + minStopDistance * 2, digits); // 2x minimum for TP
+         }
+         else // SELL
+         {
+            // For SELL orders, take profit must be below entry price
+            tp = NormalizeDouble(currentPrice - minStopDistance * 2, digits);
+         }
+         
+         Print("⚠️ Take profit adjusted to meet broker minimum STOPLEVEL: ", tp, " (distance: ", minStopDistance * 2, ")");
+      }
+      else
+      {
+         // Normalize take profit to proper decimal places
+         tp = NormalizeDouble(tp, digits);
+      }
+   }
+   
    // Execute the trade
    MqlTradeRequest request = {};
    MqlTradeResult result = {};
@@ -621,13 +695,13 @@ string ExecuteTradeJSON(string json)
    if(action == "BUY")
    {
       request.type = ORDER_TYPE_BUY;
-      request.price = SymbolInfoDouble(symbol, SYMBOL_ASK);
+      request.price = NormalizeDouble(ask, digits);
       request.type_filling = filling_mode;
    }
    else if(action == "SELL")
    {
       request.type = ORDER_TYPE_SELL;
-      request.price = SymbolInfoDouble(symbol, SYMBOL_BID);
+      request.price = NormalizeDouble(bid, digits);
       request.type_filling = filling_mode;
    }
    else
@@ -1022,6 +1096,104 @@ string GetHistoricalDataJSON(string symbol, string timeframe_str, int count)
    json += "], \"timestamp\": \"" + TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS) + "\"}";
    
    return json;
+}
+
+//+------------------------------------------------------------------+
+//| Close position by ticket                                        |
+//+------------------------------------------------------------------+
+string ClosePositionJSON(string json)
+{
+   string ticket_str = ExtractJSONValue(json, "ticket");
+   
+   if(ticket_str == "")
+   {
+      return "{\"success\": false, \"error\": \"Missing ticket parameter\"}";
+   }
+   
+   ulong ticket = (ulong)StringToInteger(ticket_str);
+   
+   if(ticket <= 0)
+   {
+      return "{\"success\": false, \"error\": \"Invalid ticket: " + ticket_str + "\"}";
+   }
+   
+   // Select position by ticket
+   if(!PositionSelectByTicket(ticket))
+   {
+      return "{\"success\": false, \"error\": \"Position not found with ticket: " + ticket_str + "\"}";
+   }
+   
+   string symbol = PositionGetString(POSITION_SYMBOL);
+   double volume = PositionGetDouble(POSITION_VOLUME);
+   ENUM_POSITION_TYPE pos_type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+   
+   Print("🔒 Closing position: Ticket=", ticket, " Symbol=", symbol, " Volume=", volume, " Type=", (pos_type == POSITION_TYPE_BUY ? "BUY" : "SELL"));
+   
+   // Create close request
+   MqlTradeRequest request = {};
+   MqlTradeResult result = {};
+   
+   ZeroMemory(request);
+   ZeroMemory(result);
+   
+   request.action = TRADE_ACTION_DEAL;
+   request.position = ticket;
+   request.symbol = symbol;
+   request.volume = volume;
+   request.deviation = 10;
+   request.magic = MAGIC_NUMBER;
+   request.comment = "AI Trading System - Auto Close";
+   
+   // CRITICAL: Explicitly set sl and tp to 0 when closing to avoid "Invalid stops" error (10016)
+   request.sl = 0;
+   request.tp = 0;
+   
+   // Set opposite order type to close
+   int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+   if(pos_type == POSITION_TYPE_BUY)
+   {
+      request.type = ORDER_TYPE_SELL;
+      double bid = SymbolInfoDouble(symbol, SYMBOL_BID);
+      request.price = NormalizeDouble(bid, digits);
+   }
+   else
+   {
+      request.type = ORDER_TYPE_BUY;
+      double ask = SymbolInfoDouble(symbol, SYMBOL_ASK);
+      request.price = NormalizeDouble(ask, digits);
+   }
+   
+   // Get filling mode
+   ENUM_ORDER_TYPE_FILLING filling_mode = GetFillingMode(symbol);
+   request.type_filling = filling_mode;
+   
+   // Send close request
+   bool success = OrderSend(request, result);
+   
+   if(success && result.retcode == TRADE_RETCODE_DONE)
+   {
+      int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+      string response = "{";
+      response += "\"success\": true,";
+      response += "\"source\": \"REAL_MT5\",";
+      response += "\"ticket\": \"" + ticket_str + "\",";
+      response += "\"order_id\": \"" + IntegerToString(result.order) + "\",";
+      response += "\"deal_id\": \"" + IntegerToString(result.deal) + "\",";
+      response += "\"volume\": " + DoubleToString(result.volume, 2) + ",";
+      response += "\"price\": " + DoubleToString(result.price, digits) + ",";
+      response += "\"symbol\": \"" + symbol + "\",";
+      response += "\"message\": \"Position closed successfully\",";
+      response += "\"timestamp\": \"" + TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS) + "\"";
+      response += "}";
+      Print("✅ Position closed successfully: Ticket=", ticket);
+      return response;
+   }
+   else
+   {
+      string error_msg = "{\"success\": false, \"error\": \"Failed to close position: " + IntegerToString(result.retcode) + " - " + result.comment + "\"}";
+      Print("❌ Failed to close position: ", result.retcode, " - ", result.comment);
+      return error_msg;
+   }
 }
 
 //+------------------------------------------------------------------+

@@ -24,6 +24,10 @@ export async function GET(request: NextRequest) {
     // Get API key from server-side environment
     const apiKey = serverAPIKeyManager.getKey('TWELVE_DATA');
     if (!apiKey) {
+      // In dev/test, return empty data instead of error
+      if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+        return NextResponse.json({ values: [] });
+      }
       return NextResponse.json(
         { error: 'TwelveData API key not configured' },
         { status: 500 }

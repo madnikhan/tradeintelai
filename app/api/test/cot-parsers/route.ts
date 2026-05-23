@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireApiAuth } from '@/lib/with-auth';
 import { COTDataProvider } from '@/lib/data-providers/cot-data';
 import { COTAnalyzer } from '@/lib/cot-analyzer';
 import { logger } from '@/lib/logger';
@@ -11,6 +12,9 @@ export const dynamic = 'force-dynamic';
  * Tests COT data fetching and analysis for all supported currencies
  */
 export async function GET(request: NextRequest) {
+  const authError = await requireApiAuth(request);
+  if (authError) return authError;
+
   const startTime = Date.now();
   const results: any = {
     timestamp: new Date().toISOString(),

@@ -66,8 +66,9 @@ export async function signIn(
     logger.info(`✅ User signed in: ${email}`);
     return { success: true, user: userCredential.user };
   } catch (error: any) {
-    const errorMessage = getAuthErrorMessage(error.code);
-    logger.error(`❌ Sign in failed: ${errorMessage}`);
+    const code = error?.code;
+    const errorMessage = getAuthErrorMessage(code);
+    logger.error(`❌ Sign in failed: ${errorMessage}${code ? ` (${code})` : ''}`);
     return { success: false, error: errorMessage };
   }
 }
@@ -241,7 +242,8 @@ export async function updateUserProfile(
 /**
  * Convert Firebase Auth error codes to user-friendly messages
  */
-function getAuthErrorMessage(errorCode: string): string {
+function getAuthErrorMessage(errorCode: string | undefined): string {
+  if (!errorCode) return 'Invalid email or password.';
   const errorMessages: Record<string, string> = {
     'auth/email-already-in-use': 'This email is already registered. Please sign in instead.',
     'auth/invalid-email': 'Invalid email address.',

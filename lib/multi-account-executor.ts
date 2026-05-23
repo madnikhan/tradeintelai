@@ -5,6 +5,7 @@
 
 import { accountManager, MT5Account } from './account-manager';
 import { httpBridge } from './http-bridge-connector';
+import { findAccountByLogin, canTradeByRole, getMemberRole } from './firebase/mt5-accounts';
 
 export interface MultiAccountTradeResult {
   accountId: string;
@@ -82,8 +83,23 @@ export class MultiAccountExecutor {
     }
   ): Promise<MultiAccountTradeResult> {
     try {
-      // For now, we'll use the same bridge but with account context
-      // In the future, this could route to account-specific bridges
+      const fsAccount = await findAccountByLogin(account.login);
+      if (fsAccount) {
+        const role = await getMemberRole(fsAccount.id);
+        if (!canTradeByRole(role)) {
+          return {
+            accountId: account.id,
+            accountName: account.name,
+            login: account.login,
+            success: false,
+            error: 'No trade permission on this shared account',
+          };
+        }
+        if (fsAccount.bridgeUrl && typeof window !== 'undefined') {
+          localStorage.setItem('bridge_url', fsAccount.bridgeUrl);
+        }
+      }
+
       const result = await httpBridge.executeTrade({
         symbol: trade.symbol,
         type: trade.type,

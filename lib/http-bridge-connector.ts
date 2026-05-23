@@ -1,5 +1,33 @@
 import { BRIDGE_CONFIG, getBridgeUrl, retryWithBackoff } from '@/config/bridge-config';
 import { logger } from '@/lib/logger';
+import { accountManager } from '@/lib/account-manager';
+
+function resolveAccountLogin(override?: number): number | undefined {
+  if (override !== undefined) return override;
+  if (typeof window === 'undefined') return undefined;
+  return accountManager.getActiveAccount()?.login;
+}
+
+function tradeBody(
+  trade: {
+    symbol: string;
+    type: 'BUY' | 'SELL';
+    volume: number;
+    stopLoss?: number;
+    takeProfit?: number;
+    accountLogin?: number;
+  }
+) {
+  const login = resolveAccountLogin(trade.accountLogin);
+  return {
+    symbol: trade.symbol,
+    action: trade.type,
+    volume: trade.volume,
+    sl: trade.stopLoss,
+    tp: trade.takeProfit,
+    ...(login ? { account_login: login } : {}),
+  };
+}
 
 export class HTTPBridgeConnector {
   private connected = false;
@@ -50,13 +78,14 @@ export class HTTPBridgeConnector {
     }
   }
 
-  async getAccountInfo(): Promise<any> {
+  async getAccountInfo(accountLogin?: number): Promise<any> {
     return retryWithBackoff(async () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), BRIDGE_CONFIG.timeouts.account);
       
       try {
-        const accountUrl = getBridgeUrl('/account');
+        const login = resolveAccountLogin(accountLogin);
+        const accountUrl = getBridgeUrl('/account', login);
         console.log(`🌐 [HTTPBridge] Fetching account from: ${accountUrl}`);
         console.log(`🌐 [HTTPBridge] Base URL from config: ${BRIDGE_CONFIG.baseUrl}`);
         
@@ -107,13 +136,14 @@ export class HTTPBridgeConnector {
     });
   }
 
-  async getMarketData(symbol: string): Promise<any> {
+  async getMarketData(symbol: string, accountLogin?: number): Promise<any> {
     return retryWithBackoff(async () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), BRIDGE_CONFIG.timeouts.price);
       
       try {
-        const response = await fetch(getBridgeUrl(`/price/${symbol}`), {
+        const login = resolveAccountLogin(accountLogin);
+        const response = await fetch(getBridgeUrl(`/price/${symbol}`, login), {
           signal: controller.signal,
           headers: this.getDefaultHeaders(),
         });
@@ -148,18 +178,20 @@ export class HTTPBridgeConnector {
   /**
    * Close a position by ticket ID
    */
-  async closePosition(ticket: number | string): Promise<any> {
+  async closePosition(ticket: number | string, accountLogin?: number): Promise<any> {
     return retryWithBackoff(async () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), BRIDGE_CONFIG.timeouts.trade || 10000);
       
       try {
-        const response = await fetch(getBridgeUrl(`/close-position/${ticket}`), {
+        const login = resolveAccountLogin(accountLogin);
+        const response = await fetch(getBridgeUrl(`/close-position/${ticket}`, login), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...this.getDefaultHeaders(),
           },
+          body: JSON.stringify(login ? { account_login: login } : {}),
           signal: controller.signal,
         });
         
@@ -207,19 +239,14 @@ export class HTTPBridgeConnector {
       const timeoutId = setTimeout(() => controller.abort(), BRIDGE_CONFIG.timeouts.trade || 10000);
       
       try {
-        const response = await fetch(getBridgeUrl('/trade'), {
+        const login = resolveAccountLogin(trade.accountLogin);
+        const response = await fetch(getBridgeUrl('/trade', login), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...this.getDefaultHeaders(),
           },
-          body: JSON.stringify({
-            symbol: trade.symbol,
-            action: trade.type,
-            volume: trade.volume,
-            sl: trade.stopLoss,
-            tp: trade.takeProfit
-          }),
+          body: JSON.stringify(tradeBody(trade)),
           signal: controller.signal,
         });
         
@@ -256,7 +283,7 @@ export class HTTPBridgeConnector {
       
       // ENHANCED: Use GPT-5.1 to enhance error message
       if (typeof window !== 'undefined') {
-        import('./openai-error-enhancer').then(({ enhanceErrorMessage }) => {
+        import('./ai-error-enhancer').then(({ enhanceErrorMessage }) => {
           enhanceErrorMessage(error, {
             action: 'executeTrade',
             component: 'HTTPBridgeConnector',
@@ -277,13 +304,14 @@ export class HTTPBridgeConnector {
     });
   }
 
-  async getPositions(): Promise<any> {
+  async getPositions(accountLogin?: number): Promise<any> {
     return retryWithBackoff(async () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), BRIDGE_CONFIG.timeouts.positions);
       
       try {
-        const response = await fetch(getBridgeUrl('/positions'), {
+        const login = resolveAccountLogin(accountLogin);
+        const response = await fetch(getBridgeUrl('/positions', login), {
           signal: controller.signal,
           headers: this.getDefaultHeaders(),
         });

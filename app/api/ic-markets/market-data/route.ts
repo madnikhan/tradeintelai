@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fileBridge } from '@/lib/file-bridge-connector';
+import { requireApiAuth } from '@/lib/with-auth';
 
 // Mark route as dynamic
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  const authError = await requireApiAuth(request);
+  if (authError) return authError;
+
   try {
     const { searchParams } = new URL(request.url);
     const symbol = searchParams.get('symbol') || 'EURUSD';

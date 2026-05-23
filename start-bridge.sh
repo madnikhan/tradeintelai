@@ -22,11 +22,19 @@ echo ""
 echo "To stop the bridge, run: pkill -f wine-mt5-connector.py"
 echo "Or kill PID: $BRIDGE_PID"
 echo ""
-echo "Waiting 3 seconds to verify bridge is running..."
-sleep 3
+echo "Waiting 5 seconds for bridge to initialize..."
+sleep 5
 
-# Test if bridge is responding
-if curl -s -m 2 http://localhost:8080/health > /dev/null 2>&1; then
+# Test if bridge is responding (retry a few times; bridge can be busy during MT5 connector init)
+BRIDGE_OK=0
+for i in 1 2 3; do
+    if curl -s -m 5 http://localhost:8080/health > /dev/null 2>&1; then
+        BRIDGE_OK=1
+        break
+    fi
+    [ $i -lt 3 ] && sleep 2
+done
+if [ "$BRIDGE_OK" = 1 ]; then
     echo "✅ Bridge is responding on http://localhost:8080"
 else
     echo "⚠️  Bridge may not be responding. Check logs: mt5-bridge/bridge.log"

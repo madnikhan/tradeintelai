@@ -24,6 +24,10 @@ export async function GET(request: NextRequest) {
     // Get API key from server-side environment
     const apiKey = serverAPIKeyManager.getKey('NEWSDATA');
     if (!apiKey) {
+      // In dev/test, return empty data instead of error
+      if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+        return NextResponse.json({ results: [], status: 'success' });
+      }
       return NextResponse.json(
         { error: 'NewsData API key not configured' },
         { status: 500 }

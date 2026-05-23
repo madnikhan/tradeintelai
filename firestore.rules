@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isMt5Member(accountId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/mt5Accounts/$(accountId)/members/$(request.auth.uid));
+    }
+
+    function isMt5Trader(accountId) {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/mt5Accounts/$(accountId)/members/$(request.auth.uid)).data.role in ['owner', 'trader'];
+    }
+
+    match /analysis/{userId}/results/{analysisId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /trades/{userId}/history/{tradeId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /accounts/{userId}/{document=**} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/settings/{docId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/subscription/{docId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    match /mt5Accounts/{accountId} {
+      allow read: if isSignedIn()
+        && (resource.data.ownerUid == request.auth.uid || isMt5Member(accountId));
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+
+      match /members/{memberUid} {
+        allow read: if isSignedIn()
+          && (memberUid == request.auth.uid
+            || get(/databases/$(database)/documents/mt5Accounts/$(accountId)).data.ownerUid == request.auth.uid);
+        allow write: if isSignedIn()
+          && get(/databases/$(database)/documents/mt5Accounts/$(accountId)).data.ownerUid == request.auth.uid;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

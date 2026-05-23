@@ -1,0 +1,84 @@
+# Docker Compose configuration for 50 MT5 accounts
+# Copy to docker-compose.yml and customize
+
+version: '3.8'
+
+services:
+  # Multi-Bridge Manager
+  bridge-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile.bridge
+    container_name: bridge-manager
+    ports:
+      - "8079:8079"
+    volumes:
+      - ./multi-bridge-manager.py:/app/multi-bridge-manager.py
+      - ./bridge-config.json:/app/bridge-config.json
+      - ./mt5-commands:/app/mt5-commands
+      - ./mt5-responses:/app/mt5-responses
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - mt5-network
+
+  # Bridge Router
+  bridge-router:
+    build:
+      context: .
+      dockerfile: Dockerfile.bridge
+    container_name: bridge-router
+    ports:
+      - "8080:8080"
+    depends_on:
+      - bridge-manager
+    volumes:
+      - ./bridge-router.py:/app/bridge-router.py
+    environment:
+      - MANAGER_API_URL=http://bridge-manager:8079
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - mt5-network
+
+  # MT5 Account Containers
+  # Template for one account - repeat for all 50 accounts
+  mt5-account-123456:
+    build:
+      context: .
+      dockerfile: Dockerfile.mt5
+    container_name: mt5-account-123456
+    environment:
+      - ACCOUNT_LOGIN=123456
+      - ACCOUNT_PASSWORD=${ACCOUNT_PASSWORD_123456}
+      - ACCOUNT_SERVER=${ACCOUNT_SERVER_123456}
+      - COMMANDS_DIR=mt5-commands-123456
+      - RESPONSES_DIR=mt5-responses-123456
+      - BRIDGE_PORT=8081
+    volumes:
+      - mt5-data-123456:/root/.wine
+      - ./mt5-commands-123456:/mt5-commands
+      - ./mt5-responses-123456:/mt5-responses
+    ports:
+      - "8081:8081"
+    network_mode: host  # Use host network for simplicity
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: '0.5'
+    shm_size: 256m
+
+  # Example: Add more accounts by copying the template above
+  # mt5-account-123457:
+  #   ... (same structure, different account number)
+
+networks:
+  mt5-network:
+    driver: bridge
+
+volumes:
+  mt5-data-123456:
+  # Add volumes for all accounts
+  # mt5-data-123457:
+  # ...
+

@@ -303,49 +303,55 @@ export class RSSNewsProvider {
       };
     }
     
-    // Analyze with enhanced NLP + GPT-5.1 (if available)
-    const sentimentData = await Promise.all(relevantArticles.map(async (article) => {
+    // One batched GPT sentiment call for top articles (not one call per article)
+    let batchGptScore: number | null = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const { ensureAIAvailable, enhanceSentimentAnalysis } = await import('@/lib/ai-service');
+        if (await ensureAIAvailable()) {
+          const batchTexts = relevantArticles
+            .slice(0, 5)
+            .map((article) => `${article.title} ${article.description}`);
+          batchGptScore = await enhanceSentimentAnalysis(batchTexts);
+        }
+      } catch {
+        console.debug('GPT sentiment batch unavailable, using NLP only');
+      }
+    }
+
+    const batchGptSentiment =
+      batchGptScore === null
+        ? null
+        : batchGptScore > 60
+          ? { sentiment: 'positive' as const, confidence: (batchGptScore - 50) * 2 }
+          : batchGptScore < 40
+            ? { sentiment: 'negative' as const, confidence: (50 - batchGptScore) * 2 }
+            : {
+                sentiment: 'neutral' as const,
+                confidence: 50 - Math.abs(batchGptScore - 50) * 2,
+              };
+
+    // Analyze with enhanced NLP + optional batched GPT score
+    const sentimentData = await Promise.all(
+      relevantArticles.map(async (article) => {
       const text = `${article.title} ${article.description}`;
       const nlpResult = EnhancedSentimentParser.analyzeSentimentNLP(text);
       const sourceCredibility = EnhancedSentimentParser.getSourceCredibility(article.source_id);
       
-      // Try GPT-5.1 enhancement for better accuracy
-      let gptEnhancedSentiment: { sentiment: 'positive' | 'negative' | 'neutral'; confidence: number } | null = null;
-      try {
-        if (typeof window !== 'undefined') {
-          const { enhanceSentimentAnalysis } = await import('@/lib/openai-service');
-          const gptScore = await enhanceSentimentAnalysis([text]);
-          if (gptScore !== null) {
-            // Convert GPT score (0-100) to sentiment
-            if (gptScore > 60) {
-              gptEnhancedSentiment = { sentiment: 'positive', confidence: (gptScore - 50) * 2 };
-            } else if (gptScore < 40) {
-              gptEnhancedSentiment = { sentiment: 'negative', confidence: (50 - gptScore) * 2 };
-            } else {
-              gptEnhancedSentiment = { sentiment: 'neutral', confidence: 50 - Math.abs(gptScore - 50) * 2 };
-            }
-          }
-        }
-      } catch (error) {
-        // GPT-5.1 unavailable, use NLP result only
-        console.debug('GPT-5.1 sentiment enhancement unavailable, using NLP only');
-      }
+      const gptEnhancedSentiment = batchGptSentiment;
       
-      // Combine NLP and GPT-5.1 results (weighted average)
+      // Combine NLP and GPT results (weighted average)
       let finalSentiment = nlpResult.sentiment;
       let finalConfidence = nlpResult.confidence;
       
       if (gptEnhancedSentiment) {
-        // Weight: 60% GPT-5.1, 40% NLP (GPT-5.1 is more accurate)
+        // Weight: 60% GPT, 40% NLP
         const gptWeight = 0.6;
         const nlpWeight = 0.4;
         
-        // Combine sentiments
         if (gptEnhancedSentiment.sentiment === nlpResult.sentiment) {
-          // Same sentiment - increase confidence
           finalConfidence = (gptEnhancedSentiment.confidence * gptWeight) + (nlpResult.confidence * nlpWeight);
         } else {
-          // Different sentiments - use GPT-5.1 as primary (more accurate)
           finalSentiment = gptEnhancedSentiment.sentiment;
           finalConfidence = (gptEnhancedSentiment.confidence * gptWeight) + (nlpResult.confidence * nlpWeight * 0.5);
         }

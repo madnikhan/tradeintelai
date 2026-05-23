@@ -1,7 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { httpBridge } from '@/lib/http-bridge-connector';
+import { requireApiAuth } from '@/lib/with-auth';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authError = await requireApiAuth(request);
+  if (authError) return authError;
+
   try {
     // For now, return empty - we'll need to add history endpoint to bridge
     // In the future, this would fetch from MT5 via the bridge

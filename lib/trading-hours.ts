@@ -42,14 +42,14 @@ const TRADING_SESSIONS: TradingSession[] = [
     name: 'London',
     startHour: 8,  // 8 AM UTC
     endHour: 16,   // 4 PM UTC
-    bestPairs: ['EURUSD', 'GBPUSD', 'EURGBP', 'USDCHF', 'EURJPY', 'GBPJPY'],
+    bestPairs: ['EURUSD', 'GBPUSD', 'EURGBP', 'USDCHF', 'EURJPY', 'GBPJPY', 'XAUUSD'],
     quality: 'PRIME',
   },
   {
     name: 'New York',
     startHour: 13, // 1 PM UTC
     endHour: 22,   // 10 PM UTC
-    bestPairs: ['EURUSD', 'GBPUSD', 'USDCAD', 'USDCHF', 'USDJPY'],
+    bestPairs: ['EURUSD', 'GBPUSD', 'USDCAD', 'USDCHF', 'USDJPY', 'XAUUSD'],
     quality: 'PRIME',
   },
 ];
@@ -105,7 +105,7 @@ export class TradingHoursFilter {
         recommendation: '🔥 PRIME TIME! Best liquidity and volatility.',
         nextOptimalSession: 'Current',
         hoursUntilOptimal: 0,
-        bestPairsNow: ['EURUSD', 'GBPUSD', 'USDCHF', 'USDJPY', 'USDCAD'],
+        bestPairsNow: ['EURUSD', 'GBPUSD', 'USDCHF', 'USDJPY', 'USDCAD', 'XAUUSD'],
       };
     }
     

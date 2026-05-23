@@ -3,6 +3,12 @@
 import { useState, useEffect } from 'react';
 import { TRADING_RULES } from '@/config/trading-rules';
 import { TradingModeManager } from '@/lib/trading-mode';
+import { getAIProvider, setAIProvider, getAIProviderLabel, type AIProvider } from '@/lib/ai-settings';
+import { useSubscription } from '@/hooks/useSubscription';
+import { BillingPortalButton } from '@/components/BillingPortalButton';
+import { SubscribeButton } from '@/components/SubscribeButton';
+import { loadUserBridgeSettings, saveUserBridgeSettings } from '@/lib/firebase/user-bridge-settings';
+import { grantMt5AccountAccess } from '@/lib/firebase/mt5-accounts';
 
 export function Settings() {
   const [riskPercentage, setRiskPercentage] = useState<number>(TRADING_RULES.RISK_PERCENTAGE * 100);
@@ -13,7 +19,12 @@ export function Settings() {
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(true);
   const [autoScanEnabled, setAutoScanEnabled] = useState<boolean>(true);
   const [scanInterval, setScanInterval] = useState<number>(5);
+  const [aiProvider, setAiProvider] = useState<AIProvider>('auto');
+  const [bridgeUrl, setBridgeUrl] = useState('');
+  const [shareMemberUid, setShareMemberUid] = useState('');
+  const [shareAccountId, setShareAccountId] = useState('');
   const [saved, setSaved] = useState<boolean>(false);
+  const { active, status, currentPeriodEnd } = useSubscription();
 
   useEffect(() => {
     // Load saved settings from localStorage
@@ -34,6 +45,10 @@ export function Settings() {
     if (savedNotifications) setNotificationsEnabled(savedNotifications === 'true');
     if (savedAutoScan) setAutoScanEnabled(savedAutoScan === 'true');
     if (savedScanInterval) setScanInterval(parseInt(savedScanInterval));
+    setAiProvider(getAIProvider());
+    loadUserBridgeSettings().then((s) => {
+      if (s.bridgeUrl) setBridgeUrl(s.bridgeUrl);
+    });
   }, []);
 
   const handleSave = () => {
@@ -46,6 +61,9 @@ export function Settings() {
     localStorage.setItem('settings_notifications', notificationsEnabled.toString());
     localStorage.setItem('settings_auto_scan', autoScanEnabled.toString());
     localStorage.setItem('settings_scan_interval', scanInterval.toString());
+    setAIProvider(aiProvider);
+    saveUserBridgeSettings({ bridgeUrl: bridgeUrl.trim() || null, bridgeMode: 'direct' });
+    window.dispatchEvent(new CustomEvent('ai-provider-changed', { detail: aiProvider }));
 
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -60,6 +78,7 @@ export function Settings() {
     setNotificationsEnabled(true);
     setAutoScanEnabled(true);
     setScanInterval(5);
+    setAiProvider('auto');
   };
 
   return (
@@ -247,6 +266,117 @@ export function Settings() {
                 />
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Subscription */}
+        <div className="bg-[#0d1321] rounded-xl border border-[#1e2738] p-6">
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>💳</span> Subscription
+          </h3>
+          <div className="space-y-3 text-sm">
+            <p className="text-gray-300">
+              Status:{' '}
+              <span className={active ? 'text-emerald-400' : 'text-rose-400'}>
+                {active ? 'Active' : status}
+              </span>
+            </p>
+            {currentPeriodEnd && (
+              <p className="text-gray-400">
+                Renews: {new Date(currentPeriodEnd).toLocaleDateString()}
+              </p>
+            )}
+            {active ? (
+              <div className="flex flex-wrap gap-2">
+                <BillingPortalButton />
+                <a
+                  href="/onboarding"
+                  className="px-4 py-2 rounded-lg bg-[#1e2738] text-gray-300 hover:text-white text-sm"
+                >
+                  Download bridge
+                </a>
+              </div>
+            ) : (
+              <SubscribeButton className="px-4 py-2 rounded-lg bg-cyan-500 text-white text-sm" />
+            )}
+          </div>
+        </div>
+
+        {/* MT5 Bridge */}
+        <div className="bg-[#0d1321] rounded-xl border border-[#1e2738] p-6">
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>🔗</span> MT5 Bridge
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Tunnel URL</label>
+              <input
+                type="url"
+                value={bridgeUrl}
+                onChange={(e) => setBridgeUrl(e.target.value)}
+                placeholder="https://your-tunnel.trycloudflare.com"
+                className="w-full px-4 py-2 bg-[#141c2b] border border-[#1e2738] rounded-lg text-white"
+              />
+              <p className="text-xs text-gray-500 mt-1">Saved on Save Settings. Used to connect your local MT5 bridge.</p>
+            </div>
+            <div className="border-t border-[#1e2738] pt-4">
+              <label className="block text-sm text-gray-400 mb-2">Share account (Firebase UID)</label>
+              <input
+                type="text"
+                value={shareMemberUid}
+                onChange={(e) => setShareMemberUid(e.target.value)}
+                placeholder="colleague Firebase UID"
+                className="w-full px-4 py-2 bg-[#141c2b] border border-[#1e2738] rounded-lg text-white mb-2"
+              />
+              <input
+                type="text"
+                value={shareAccountId}
+                onChange={(e) => setShareAccountId(e.target.value)}
+                placeholder="mt5Accounts document ID"
+                className="w-full px-4 py-2 bg-[#141c2b] border border-[#1e2738] rounded-lg text-white mb-2"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  if (shareAccountId && shareMemberUid) {
+                    const ok = await grantMt5AccountAccess(shareAccountId, shareMemberUid, 'trader');
+                    alert(ok ? 'Trader access granted' : 'Failed — check account ID and ownership');
+                  }
+                }}
+                className="px-4 py-2 rounded-lg bg-[#1e2738] text-gray-300 hover:text-white text-sm"
+              >
+                Grant trader access
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* AI Provider */}
+        <div className="bg-[#0d1321] rounded-xl border border-[#1e2738] p-6">
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>🤖</span> AI Provider
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Provider</label>
+              <select
+                value={aiProvider}
+                onChange={(e) => setAiProvider(e.target.value as AIProvider)}
+                className="w-full px-4 py-2 bg-[#141c2b] border border-[#1e2738] rounded-lg text-white focus:outline-none focus:border-cyan-500"
+              >
+                <option value="auto">Auto (recommended)</option>
+                <option value="gemini">Gemini</option>
+                <option value="openai">OpenAI</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-2">
+                Auto uses Gemini when available, falls back to OpenAI on quota or auth errors.
+                Current: {getAIProviderLabel(aiProvider)}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Verify keys: <code className="bg-[#141c2b] px-1 rounded">npm run verify:gemini</code>{' '}
+                / <code className="bg-[#141c2b] px-1 rounded">npm run verify:openai</code>
+              </p>
+            </div>
           </div>
         </div>
 

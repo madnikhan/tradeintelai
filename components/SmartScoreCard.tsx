@@ -23,9 +23,10 @@ interface ScoreData {
 interface SmartScoreCardProps {
   analysis: any;
   symbol: string;
+  compact?: boolean;
 }
 
-export function SmartScoreCard({ analysis, symbol }: SmartScoreCardProps) {
+export function SmartScoreCard({ analysis, symbol, compact = false }: SmartScoreCardProps) {
   const [showDetails, setShowDetails] = useState(false);
 
   if (!analysis) {
@@ -110,11 +111,24 @@ export function SmartScoreCard({ analysis, symbol }: SmartScoreCardProps) {
   }
 
   // Add COT signals
+  // 🔒 EXPLANATION-SOURCE INTEGRITY: Forbid BUY/SELL wording when non-actionable
   if (analysis.cotAnalysis) {
     const cot = analysis.cotAnalysis;
-    if (cot.recommendation?.includes('BUY')) signals.bullish.push(`COT: ${cot.sentiment} sentiment`);
-    else if (cot.recommendation?.includes('SELL')) signals.bearish.push(`COT: ${cot.sentiment} sentiment`);
-    else signals.neutral.push(`COT: ${cot.sentiment} sentiment`);
+    const isBiasNonActionable = analysis.gateStatus?.directionalBias === 'NEUTRAL';
+    const isExecutionBlocked = !analysis.gateStatus?.executionPermitted;
+    const shouldSanitize = isBiasNonActionable || isExecutionBlocked;
+    
+    if (shouldSanitize) {
+      // Downgrade to "context-only / non-actionable"
+      const cotDirection = cot.recommendation?.includes('BUY') ? 'BULLISH' :
+                          cot.recommendation?.includes('SELL') ? 'BEARISH' : 'NEUTRAL';
+      signals.neutral.push(`COT: ${cotDirection} positioning (Context-Only / Non-Actionable)`);
+    } else {
+      // Normal COT signal when actionable
+      if (cot.recommendation?.includes('BUY')) signals.bullish.push(`COT: ${cot.sentiment} sentiment`);
+      else if (cot.recommendation?.includes('SELL')) signals.bearish.push(`COT: ${cot.sentiment} sentiment`);
+      else signals.neutral.push(`COT: ${cot.sentiment} sentiment`);
+    }
   }
 
   // Add regime signals
@@ -197,6 +211,30 @@ export function SmartScoreCard({ analysis, symbol }: SmartScoreCardProps) {
   );
 
   const shouldTrade = tradeDecisionScore >= 65 && confidence >= 60 && !badge.text.includes('HOLD');
+
+  if (compact) {
+    return (
+      <div className="space-y-3">
+        <p className="hint">
+          <strong className="text-secondary">Engine score</strong> — weighted technical, fundamental, and sentiment inputs.
+          <strong className="text-secondary block mt-1">Trade decision score</strong> — timing and risk adjusted for whether to act now.
+        </p>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="bg-[#141c2b] rounded-lg p-3 border border-[#1e2738]">
+            <p className="label">Engine</p>
+            <p className={`value ${getScoreColor(overallScore)}`}>{overallScore}/100</p>
+          </div>
+          <div className="bg-[#141c2b] rounded-lg p-3 border border-[#1e2738]">
+            <p className="label">Decision</p>
+            <p className={`value ${getScoreColor(tradeDecisionScore)}`}>{tradeDecisionScore}/100</p>
+          </div>
+        </div>
+        <p className="text-xs text-secondary">
+          {shouldTrade ? 'Scores support trading when gates permit.' : 'Scores suggest caution — check gate status above.'}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-[#0d1321] rounded-xl border border-[#1e2738] overflow-hidden">

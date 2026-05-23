@@ -27,6 +27,37 @@ class WineMT5Connector:
     
     def _find_mt5_files_dir(self, subdir):
         """Find MT5 Files directory or fall back to project directory"""
+        # Explicit override: point directly at MT5's MQL5\\Files directory.
+        # Example (Windows):
+        #   MT5_FILES_DIR=%APPDATA%\\MetaQuotes\\Terminal\\<hash>\\MQL5\\Files
+        # The bridge will then use:
+        #   <MT5_FILES_DIR>\\mt5-commands and <MT5_FILES_DIR>\\mt5-responses
+        explicit_files_dir = os.environ.get('MT5_FILES_DIR')
+        if explicit_files_dir:
+            mql5_files_base = os.path.abspath(os.path.expandvars(explicit_files_dir))
+            mql5_files = os.path.join(mql5_files_base, subdir)
+            logger.info(f"📁 Using MT5_FILES_DIR override: {mql5_files_base}")
+            return mql5_files
+
+        # Windows native MT5 path:
+        #   %APPDATA%\\MetaQuotes\\Terminal\\<hash>\\MQL5\\Files
+        if os.name == 'nt':
+            appdata = os.environ.get('APPDATA')
+            if appdata:
+                terminal_root = os.path.join(appdata, "MetaQuotes", "Terminal")
+                if os.path.exists(terminal_root):
+                    try:
+                        for terminal_dir in os.listdir(terminal_root):
+                            terminal_path = os.path.join(terminal_root, terminal_dir)
+                            if os.path.isdir(terminal_path):
+                                mql5_files_base = os.path.join(terminal_path, "MQL5", "Files")
+                                if os.path.exists(mql5_files_base):
+                                    mql5_files = os.path.join(mql5_files_base, subdir)
+                                    logger.info(f"📁 Found MT5 Files directory: {mql5_files_base}")
+                                    return mql5_files
+                    except Exception as e:
+                        logger.debug(f"Error checking {terminal_root}: {e}")
+
         # Try common Wine paths
         home = os.path.expanduser("~")
         import getpass
@@ -508,6 +539,69 @@ class WineMT5Connector:
                 "positions": []
             }
 
+    def close_position(self, ticket: int):
+        """Close a position by ticket via file-based communication with MT5"""
+        command_id = f"close_position_{int(time.time() * 1000)}.json"
+        command_path = os.path.join(self.mt5_commands_dir, command_id)
+        response_id = f"response_{int(time.time() * 1000)}.json"
+        response_path = os.path.join(self.mt5_responses_dir, response_id)
+        
+        try:
+            with open(command_path, 'w') as f:
+                json.dump({
+                    "command": "close_position",
+                    "ticket": str(ticket),
+                    "timestamp": datetime.now().isoformat()
+                }, f, indent=2)
+            
+            logger.info(f"📤 Sent close position request: {command_id} (ticket: {ticket})")
+            
+            # Wait for response (max 10 seconds)
+            max_wait = 100
+            for i in range(max_wait):
+                if os.path.exists(response_path):
+                    try:
+                        with open(response_path, 'r') as f:
+                            response = json.load(f)
+                            logger.info(f"📥 Received close position response: {response_id}")
+                            
+                            # Clean up files
+                            try:
+                                os.remove(command_path)
+                                os.remove(response_path)
+                            except:
+                                pass
+                            
+                            return response
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse close position response: {e}")
+                        break
+                
+                time.sleep(0.1)
+            
+            # Timeout
+            logger.warning(f"⏱️ Timeout waiting for close position response (waited 10s)")
+            try:
+                os.remove(command_path)
+            except:
+                pass
+            
+            return {
+                "success": False,
+                "error": "Timeout waiting for MT5 response"
+            }
+        except Exception as e:
+            logger.error(f"Error closing position: {e}")
+            try:
+                if os.path.exists(command_path):
+                    os.remove(command_path)
+            except:
+                pass
+            return {
+                "success": False,
+                "error": f"Failed to close position: {e}",
+            }
+
     def get_closed_positions(self):
         """Get closed positions (trade history) from MT5 via file communication"""
         timestamp = int(time.time() * 1000)
@@ -605,15 +699,27 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
     
     def do_GET(self):
         # Health check should be instant - no MT5 calls, no connector initialization, no blocking
-        if self.path == '/health':
+        if self.path == '/health' or self.path.startswith('/health?'):
             try:
-                # Use timeout to ensure this never blocks
+                quick = 'quick=1' in self.path
+                mt5_connected = False
+                if not quick:
+                    try:
+                        mt5 = self.get_mt5_connector()
+                        account_info = mt5.get_account_info()
+                        if account_info.get('success') and account_info.get('source') == 'REAL_MT5':
+                            mt5_connected = True
+                    except Exception:
+                        pass
+                
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type, ngrok-skip-browser-warning, Cache-Control')
                 self.send_header('Cache-Control', 'no-cache')
                 self.end_headers()
-                response = json.dumps({"status": "running", "mt5_connected": False}).encode('utf-8')
+                response = json.dumps({"status": "running", "mt5_connected": mt5_connected}).encode('utf-8')
                 self.wfile.write(response)
                 self.wfile.flush()
                 return
@@ -653,7 +759,7 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
             elif self.path == '/account':
                 account_info = mt5.get_account_info()
                 self.send_json_response(200, account_info)
-            elif self.path == '/positions':
+            elif self.path == '/positions' or self.path == '/open-positions':
                 open_positions = mt5.get_open_positions()
                 self.send_json_response(200, open_positions)
             elif self.path == '/closed-positions' or self.path == '/history':
@@ -701,6 +807,22 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 logger.error(f"Error in POST /trade: {e}")
                 self.send_json_response(500, {"success": False, "error": str(e)})
+        elif self.path.startswith('/close-position/'):
+            try:
+                # Extract ticket from path: /close-position/{ticket}
+                ticket_str = self.path.split('/')[-1]
+                try:
+                    ticket = int(ticket_str)
+                except ValueError:
+                    self.send_json_response(400, {"success": False, "error": "Invalid ticket format"})
+                    return
+                
+                mt5 = self.get_mt5_connector()
+                close_result = mt5.close_position(ticket)
+                self.send_json_response(200, close_result)
+            except Exception as e:
+                logger.error(f"Error in POST /close-position: {e}")
+                self.send_json_response(500, {"success": False, "error": str(e)})
         else:
             self.send_error(404, "Endpoint not found")
     
@@ -708,7 +830,7 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, ngrok-skip-browser-warning, Cache-Control')
         self.end_headers()
     
     def send_json_response(self, status_code, data):
@@ -717,7 +839,7 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, ngrok-skip-browser-warning, Cache-Control')
             self.end_headers()
             response_data = json.dumps(data).encode('utf-8')
             self.wfile.write(response_data)

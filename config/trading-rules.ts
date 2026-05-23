@@ -16,8 +16,9 @@ export const TRADING_RULES = {
   MIN_REWARD_RISK_RATIO: 2,  // 1:2 minimum (keep this strict)
   REQUIRED_CONFLUENCE: 2,    // 2+ indicators agreeing
 
-  // Forex Pairs - Major, Minor, and Cross pairs
+  // Trading Instruments - Forex, Metals, and Stocks
   TRADING_PAIRS: [
+    // === FOREX PAIRS ===
     // Major Pairs (USD pairs)
     'EUR/USD',
     'GBP/USD', 
@@ -45,6 +46,49 @@ export const TRADING_RULES = {
     'USD/HKD',
     'EUR/NOK',
     'EUR/SEK',
+    // === METALS ===
+    'XAU/USD', // Gold
+    'XAG/USD', // Silver
+    'XAU/EUR', // Gold/Euro
+    'XAU/GBP', // Gold/Pound
+    'XPT/USD', // Platinum
+    'XPD/USD', // Palladium
+    // === MAJOR STOCKS ===
+    // US Tech Stocks
+    'AAPL', // Apple
+    'MSFT', // Microsoft
+    'GOOGL', // Alphabet (Google)
+    'AMZN', // Amazon
+    'META', // Meta (Facebook)
+    'TSLA', // Tesla
+    'NVDA', // NVIDIA
+    'NFLX', // Netflix
+    // US Finance
+    'JPM', // JPMorgan Chase
+    'BAC', // Bank of America
+    'GS', // Goldman Sachs
+    'WFC', // Wells Fargo
+    // US Consumer
+    'WMT', // Walmart
+    'HD', // Home Depot
+    'MCD', // McDonald's
+    'SBUX', // Starbucks
+    // US Healthcare
+    'JNJ', // Johnson & Johnson
+    'PFE', // Pfizer
+    'UNH', // UnitedHealth
+    // US Industrial
+    'BA', // Boeing
+    'CAT', // Caterpillar
+    'GE', // General Electric
+    // European Stocks
+    'ASML', // ASML Holding
+    'SAP', // SAP SE
+    'NOVN', // Novartis
+    // UK Stocks
+    'BP', // BP
+    'GSK', // GlaxoSmithKline
+    'RIO', // Rio Tinto
   ] as const,
 
   // Success Metrics for Demo -> Live (STRICTER for aggressive strategy)
@@ -55,12 +99,32 @@ export const TRADING_RULES = {
 } as const;
 
 // Helper to get pair without slash (for MT5)
+// Handles forex (EUR/USD -> EURUSD), metals (XAU/USD -> XAUUSD), and stocks (AAPL -> AAPL)
 export function formatPairForMT5(pair: string): string {
+  // Stocks don't have slashes, return as-is
+  if (!pair.includes('/')) return pair;
+  // Forex and metals: remove slash
   return pair.replace('/', '');
 }
 
 // Helper to get pair with slash (for display)
+// Handles forex (EURUSD -> EUR/USD), metals (XAUUSD -> XAU/USD), and stocks (AAPL -> AAPL)
 export function formatPairForDisplay(pair: string): string {
+  // If already has slash, return as-is
   if (pair.includes('/')) return pair;
-  return `${pair.slice(0, 3)}/${pair.slice(3)}`;
+  
+  // Stocks: typically 1-5 characters, no slash, and not a currency code
+  // Common currency codes are 3 chars, so if it's 3 chars and not a known currency, it might be a stock
+  // But for simplicity, if it's <= 5 chars and doesn't match forex pattern, treat as stock
+  const knownCurrencies = ['EUR', 'GBP', 'USD', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD', 'SGD', 'HKD', 'NOK', 'SEK', 'XAU', 'XAG', 'XPT', 'XPD'];
+  if (pair.length <= 5 && !knownCurrencies.includes(pair.toUpperCase())) {
+    return pair; // Likely a stock
+  }
+  
+  // Forex and metals: add slash (assume 6 characters: XXXYYY)
+  if (pair.length >= 6) {
+    return `${pair.slice(0, 3)}/${pair.slice(3)}`;
+  }
+  
+  return pair;
 }

@@ -56,6 +56,7 @@ export function OpportunityScanner() {
     'AUD/USD',
     'USD/CAD',
     'NZD/USD',
+    'XAU/USD',
   ];
 
   const ALL_PAIRS = TRADING_RULES.TRADING_PAIRS;
@@ -678,35 +679,34 @@ export function OpportunityScanner() {
         </div>
       )}
 
-      {/* URGENT ALERT BANNER - Persistent with sound until acknowledged */}
+      {/* In-app toast for strong signals */}
       {activeAlert && activeAlert.length > 0 && !alarmAcknowledged && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-red-600 via-orange-500 to-red-600 border-b-4 border-yellow-400 shadow-2xl animate-pulse">
-          <div className="max-w-7xl mx-auto px-4 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4 flex-1">
-                <div className="text-4xl animate-bounce">🚨</div>
-                <div className="flex-1">
-                  <h2 className="text-white font-bold text-xl mb-1">
-                    🎯 URGENT: {activeAlert.length} Strong Trading Signal{activeAlert.length > 1 ? 's' : ''} Found!
-                  </h2>
-                  <p className="text-white/90 text-sm">
-                    <span className="font-bold">{activeAlert[0].symbol}</span> - {activeAlert[0].recommendation} 
-                    {' '}(Score: {activeAlert[0].score}, Confidence: {activeAlert[0].confidence}%)
-                    {activeAlert.length > 1 && ` + ${activeAlert.length - 1} more`}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={acknowledgeAlert}
-                className="px-6 py-3 bg-white text-red-600 font-bold rounded-lg hover:bg-gray-100 transition-all shadow-lg flex items-center gap-2 min-w-[140px] justify-center"
-              >
-                <span>✓</span>
-                <span>Acknowledge</span>
-              </button>
+        <div
+          role="alert"
+          aria-live="polite"
+          className="mb-4 p-4 rounded-xl border-2 border-amber-500/50 bg-gradient-to-r from-red-600/20 via-orange-500/20 to-red-600/20"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="font-bold text-white">
+                Strong signal: {activeAlert[0].symbol} — {activeAlert[0].recommendation}
+              </p>
+              <p className="text-sm text-secondary">
+                Score {activeAlert[0].score}, confidence {activeAlert[0].confidence}%
+                {activeAlert.length > 1 ? ` (+${activeAlert.length - 1} more)` : ''}
+              </p>
             </div>
+            <button
+              type="button"
+              onClick={acknowledgeAlert}
+              className="btn btn-primary min-h-[44px] shrink-0"
+            >
+              Acknowledge
+            </button>
           </div>
         </div>
       )}
+
 
       {/* Strong Signals Found Banner */}
       {hasStrongSignals && (

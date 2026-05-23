@@ -21,7 +21,7 @@ class BridgeRouter:
     def __init__(self, manager_api_url: str = 'http://localhost:8079'):
         self.manager_api_url = manager_api_url
         self.account_ports: dict = {}  # Cache of account_login -> port mappings
-        self.default_port = 8080  # Fallback if account not found
+        self.default_port = 8081  # Fallback if account not found (matches multi-bridge-manager base_port)
     
     def get_bridge_port(self, account_login: int = None) -> int:
         """Get the port for a specific account's bridge"""

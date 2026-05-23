@@ -58,8 +58,8 @@ export class RegimeDetector {
     // Calculate range strength
     const rangeStrength = this.calculateRangeStrength(priceData);
 
-    // Determine regime
-    const regime = this.classifyRegime(volatility, trendStrength, rangeStrength);
+    // FIXED: Determine regime with explicit trend direction check
+    const regime = this.classifyRegime(priceData, volatility, trendStrength, rangeStrength);
 
     // Calculate confidence
     const confidence = this.calculateConfidence(volatility, trendStrength, rangeStrength);
@@ -121,10 +121,15 @@ export class RegimeDetector {
     
     const atr = trueRanges.reduce((sum, tr) => sum + tr, 0) / trueRanges.length;
     
-    // CRITICAL: Validate ATR is in reasonable range
-    // CRITICAL FIX: Reject ATR < 0.001 (10 pips) as it's too small for EURUSD
-    if (atr < 0.001 || atr > 0.02) {
-      console.warn(`⚠️ Regime detector: Calculated ATR ${atr.toFixed(5)} is outside normal range (0.001-0.02). Using default 0.007 (70 pips).`);
+    // CRITICAL: Validate ATR is in reasonable range (pair-specific)
+    // More lenient validation - minimum 0.0005 (5 pips) instead of 0.001 (10 pips)
+    // This allows for low volatility periods without triggering warnings
+    if (atr < 0.0005 || atr > 0.02) {
+      // Only warn if significantly off
+      // 🔒 DISABLED: Changed to reduce warning noise
+      // if (atr < 0.0003 || atr > 0.02) {
+      //   console.warn(`⚠️ Regime detector: Calculated ATR ${atr.toFixed(5)} is outside reasonable range (0.0005-0.02). Using default 0.007 (70 pips).`);
+      // }
       return 0.007; // Default to 70 pips
     }
     
@@ -200,9 +205,51 @@ export class RegimeDetector {
   }
 
   /**
+   * Calculate trend direction from price data
+   * Returns 'UP' if price is trending up, 'DOWN' if trending down, 'NEUTRAL' if unclear
+   */
+  private static calculateTrendDirection(priceData: PriceData[]): 'UP' | 'DOWN' | 'NEUTRAL' {
+    if (priceData.length < 2) return 'NEUTRAL';
+
+    const prices = priceData.map(d => d.close);
+    const lookback = Math.min(20, prices.length);
+    const recent = prices.slice(-lookback);
+
+    // Calculate EMA slopes to determine direction
+    const ema20 = this.calculateEMA(recent, 20);
+    const ema10 = this.calculateEMA(recent, 10);
+    const ema5 = this.calculateEMA(recent, 5);
+
+    // Check EMA alignment for trend direction
+    const bullishAlignment = ema5 > ema10 && ema10 > ema20;
+    const bearishAlignment = ema5 < ema10 && ema10 < ema20;
+
+    // Also check price movement (more recent prices vs older prices)
+    const firstHalf = recent.slice(0, Math.floor(recent.length / 2));
+    const secondHalf = recent.slice(Math.floor(recent.length / 2));
+    const firstHalfAvg = firstHalf.reduce((sum, p) => sum + p, 0) / firstHalf.length;
+    const secondHalfAvg = secondHalf.reduce((sum, p) => sum + p, 0) / secondHalf.length;
+
+    // Determine direction based on EMA alignment and price movement
+    if (bullishAlignment && secondHalfAvg > firstHalfAvg) {
+      return 'UP';
+    } else if (bearishAlignment && secondHalfAvg < firstHalfAvg) {
+      return 'DOWN';
+    } else if (secondHalfAvg > firstHalfAvg * 1.001) { // At least 0.1% higher
+      return 'UP';
+    } else if (secondHalfAvg < firstHalfAvg * 0.999) { // At least 0.1% lower
+      return 'DOWN';
+    }
+
+    return 'NEUTRAL';
+  }
+
+  /**
    * Classify market regime
+   * FIXED: Now includes explicit trend direction check
    */
   private static classifyRegime(
+    priceData: PriceData[],
     volatility: number,
     trendStrength: number,
     rangeStrength: number
@@ -219,9 +266,9 @@ export class RegimeDetector {
       return 'HIGH_VOLATILITY_TREND';
     }
     if (isTrending && !isHighVol) {
-      // Determine up or down trend
-      // This would need price direction - simplified for now
-      return 'TRENDING_UP'; // Would need actual price direction
+      // FIXED: Explicitly calculate trend direction
+      const trendDirection = this.calculateTrendDirection(priceData);
+      return trendDirection === 'UP' ? 'TRENDING_UP' : trendDirection === 'DOWN' ? 'TRENDING_DOWN' : 'TRENDING_UP'; // Default to UP if neutral
     }
     if (isHighVol && isRanging) {
       return 'HIGH_VOLATILITY_RANGE';

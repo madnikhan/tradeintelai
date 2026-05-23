@@ -30,10 +30,13 @@ mt5-bridge/*.log
 !package.json
 !package-lock.json
 
-# local env files
+.firebase-service-account.json
+firebase-service-account.json
+
 .env*.local
 .env*.local.bak
 .env.bak
+ngrok.yml
 
 # vercel
 .vercel

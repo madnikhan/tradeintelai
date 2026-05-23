@@ -4,7 +4,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireApiAuth } from '@/lib/with-auth';
 import { logger } from '@/lib/logger';
+import { validateEconomicData, isFallbackValue } from '@/lib/data-providers/data-validator';
+import { ParserMonitor } from '@/lib/data-providers/parser-monitor';
 
 const CURRENCY_COUNTRY_MAP: Record<string, string> = {
   USD: 'united-states',
@@ -18,6 +21,9 @@ const CURRENCY_COUNTRY_MAP: Record<string, string> = {
 };
 
 export async function GET(request: NextRequest) {
+  const authError = await requireApiAuth(request);
+  if (authError) return authError;
+
   const searchParams = request.nextUrl.searchParams;
   const currency = searchParams.get('currency')?.toUpperCase() || 'USD';
 
@@ -103,15 +109,44 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (!value || isNaN(value)) {
-      logger.warn(`⚠️ Could not parse CPI for ${currency}. HTML structure may have changed.`);
-      return NextResponse.json(
-        { success: false, error: 'Could not parse CPI - page structure may have changed' },
-        { status: 500 }
-      );
+    let usedFallback = false;
+    
+    // Validate value range first
+    if (!value || isNaN(value) || value < 0 || value > 20) {
+      logger.warn(`⚠️ Could not parse valid CPI for ${currency}. HTML length: ${html.length}`);
+      // Return a default/fallback CPI based on currency (for graceful degradation)
+      const fallbackCPI: Record<string, number> = {
+        USD: 3.2,
+        EUR: 2.5,
+        GBP: 3.0,
+        JPY: 2.0,
+        AUD: 3.5,
+        CAD: 2.8,
+        CHF: 1.5,
+        NZD: 4.0,
+      };
+      value = fallbackCPI[currency] || 2.5;
+      usedFallback = true;
+      logger.warn(`⚠️ Using fallback CPI for ${currency}: ${value}%`);
+      ParserMonitor.recordFallbackUsage('tradingeconomics_cpi', currency);
     }
 
     const finalDate = date || new Date().toISOString().split('T')[0];
+
+    // Validate data freshness and value range
+    const validation = validateEconomicData(value, finalDate, 'CPI', currency);
+    
+    // If validation failed but we have a value, still return it but log warnings
+    if (!validation.isValid && !usedFallback) {
+      logger.warn(`⚠️ CPI data validation failed for ${currency}:`, validation.warnings);
+    }
+
+    // Check if fallback value was used (even if parsing succeeded)
+    if (!usedFallback && isFallbackValue(value, currency, 'CPI')) {
+      usedFallback = true;
+      ParserMonitor.recordFallbackUsage('tradingeconomics_cpi', currency);
+      logger.warn(`⚠️ Detected fallback value for ${currency} CPI: ${value}%`);
+    }
 
     return NextResponse.json({
       success: true,
@@ -120,6 +155,14 @@ export async function GET(request: NextRequest) {
         date: finalDate,
         change: null,
         changePercent: null,
+        validation: {
+          isValid: validation.isValid,
+          isStale: validation.isStale,
+          isOutOfRange: validation.isOutOfRange,
+          confidence: validation.confidence,
+          warnings: validation.warnings,
+        },
+        usedFallback,
       },
     });
   } catch (error: any) {

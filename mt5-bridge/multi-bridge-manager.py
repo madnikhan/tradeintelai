@@ -108,7 +108,7 @@ class MultiBridgeManager:
     def __init__(self, config_file: str = 'bridge-config.json'):
         self.config_file = config_file
         self.bridges: Dict[int, BridgeInstance] = {}
-        self.base_port = 8080
+        self.base_port = 8081
         self.config = self.load_config()
         self.health_check_thread: Optional[threading.Thread] = None
         self.running = False
@@ -127,7 +127,7 @@ class MultiBridgeManager:
         # Default config
         return {
             'accounts': [],
-            'base_port': 8080,
+            'base_port': 8081,
             'commands_base_dir': 'mt5-commands',
             'responses_base_dir': 'mt5-responses'
         }

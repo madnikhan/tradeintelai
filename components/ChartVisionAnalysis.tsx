@@ -2,11 +2,11 @@
 
 /**
  * Chart Vision Analysis Component
- * Displays OpenAI Vision analysis of chart patterns
+ * Displays Gemini vision analysis of chart patterns
  */
 
-import { useState, useEffect, useRef } from 'react';
-import { analyzeChartImage, isOpenAIConfigured } from '@/lib/openai-service';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { analyzeChartImage, isAIConfigured, getActiveAIProviderLabel } from '@/lib/ai-service';
 import { captureRechartsChart } from '@/lib/chart-capture';
 
 interface ChartVisionAnalysisProps {
@@ -57,11 +57,12 @@ export function ChartVisionAnalysis({
   const [isExpanded, setIsExpanded] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  const isConfigured = isOpenAIConfigured();
+  const [providerLabel, setProviderLabel] = useState('AI');
+  const isConfigured = isAIConfigured();
 
-  const analyzeChart = async () => {
+  const analyzeChart = useCallback(async () => {
     if (!isConfigured) {
-      setError('OpenAI not configured');
+      setError('AI not configured');
       return;
     }
 
@@ -103,6 +104,7 @@ export function ChartVisionAnalysis({
       
       if (result) {
         setAnalysis(result);
+        setProviderLabel(getActiveAIProviderLabel());
       } else {
         setError('Failed to analyze chart');
       }
@@ -114,10 +116,45 @@ export function ChartVisionAnalysis({
       setLoading(false);
       setIsAnalyzing(false);
     }
-  };
+  }, [isConfigured, chartContainerId, symbol, timeframe, currentPrice]);
 
-  // DISABLED: Auto-analyze when component mounts to prevent OpenAI credit usage
-  // Chart analysis now requires manual trigger via "Re-analyze" button
+  // Auto-analyze when chart is ready (with delay to ensure chart is fully rendered)
+  useEffect(() => {
+    if (isConfigured && chartContainerId) {
+      // Wait for chart to be fully rendered before analyzing
+      const checkAndAnalyze = () => {
+        const container = document.getElementById(chartContainerId);
+        if (container) {
+          const chartElement = container.querySelector('.recharts-wrapper') as HTMLElement;
+          if (chartElement && chartElement.clientWidth > 0 && chartElement.clientHeight > 0) {
+            // Check if chart has actual data (SVG paths)
+            const paths = chartElement.querySelectorAll('svg path');
+            if (paths.length > 0) {
+              analyzeChart().catch(err => {
+                console.warn('Auto-analysis failed (non-blocking):', err);
+              });
+              return true;
+            }
+          }
+        }
+        return false;
+      };
+
+      // Wait 3 seconds for chart to render, then try
+      const timer = setTimeout(() => {
+        if (!checkAndAnalyze()) {
+          // If not ready, try again after 2 more seconds
+          setTimeout(() => {
+            checkAndAnalyze();
+          }, 2000);
+        }
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [symbol, timeframe, chartContainerId, isConfigured, analyzeChart]);
+
+  // DISABLED: Old auto-analyze logic (kept for reference)
   // useEffect(() => {
   //   if (isConfigured && chartContainerId) {
   //     // Use a more robust approach: wait for chart to be fully rendered
@@ -175,24 +212,18 @@ export function ChartVisionAnalysis({
   }
 
   return (
-    <div className="bg-gradient-to-br from-purple-50/10 to-pink-50/10 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200/30 dark:border-purple-800/30 p-4 sm:p-5 mb-4">
+    <div className="bg-gradient-to-br from-purple-50/10 to-pink-50/10 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl border border-purple-200/30 dark:border-purple-800/30 p-5 sm:p-6 mb-4 sm:mb-5">
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
           {/* OpenAI Logo */}
           <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="#10A37F"/>
             <path d="M12 6c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z" fill="#10A37F"/>
             <circle cx="12" cy="12" r="2" fill="#10A37F"/>
           </svg>
-          {/* GPT-5.1 Logo */}
-          <img 
-            src="/gpt-5.1.png" 
-            alt="GPT-5.1" 
-            className="w-5 h-5 flex-shrink-0 rounded"
-          />
           <span>AI Chart Pattern Analysis</span>
-          <span className="text-xs font-normal text-gray-400">Powered by GPT-5.1</span>
+          <span className="text-xs font-normal text-gray-400">Powered by {providerLabel}</span>
         </h3>
         <div className="flex items-center gap-2">
           <button
@@ -248,7 +279,7 @@ export function ChartVisionAnalysis({
                     💡 To fix this:
                   </p>
                   <ol className="text-xs text-red-300 list-decimal list-inside space-y-1 ml-2">
-                    <li>Go to <a href="https://platform.openai.com/account/billing" target="_blank" rel="noopener noreferrer" className="underline">OpenAI Billing</a></li>
+                    <li>Get a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="underline">Google AI Studio</a></li>
                     <li>Add payment method or credits</li>
                     <li>Wait a few minutes for activation</li>
                     <li>Try again</li>
@@ -268,7 +299,7 @@ export function ChartVisionAnalysis({
               {/* Recommendation */}
               <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
                 <h4 className="text-xs sm:text-sm font-semibold text-purple-400 mb-2">
-                  📊 GPT-5.1 Visual Chart Recommendation
+                  AI Visual Chart Recommendation
                 </h4>
                 <p className="text-sm text-gray-300 mb-2">{analysis.recommendation}</p>
                 <p className="text-xs text-yellow-300/80">

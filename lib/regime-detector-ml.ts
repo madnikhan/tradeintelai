@@ -42,16 +42,66 @@ interface RegimeTransition {
 }
 
 export class MLRegimeDetector {
-  private static readonly PATTERN_DATABASE: RegimePattern[] = [];
+  private static PATTERN_DATABASE: RegimePattern[] = [];
   private static readonly MIN_PATTERNS = 10;
   private static readonly REGIME_HISTORY: Array<{ regime: MarketRegime; timestamp: number; confidence: number }> = [];
   private static readonly MAX_HISTORY = 100;
+  private static readonly STORAGE_KEY = 'ml_regime_patterns';
+  private static readonly MAX_PATTERNS = 500; // Limit database size
+  private static initialized = false;
+
+  /**
+   * Initialize pattern database from localStorage
+   */
+  private static initializePatternDatabase(): void {
+    if (this.initialized) return;
+    
+    try {
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem(this.STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            this.PATTERN_DATABASE = parsed;
+            console.log(`✅ Loaded ${this.PATTERN_DATABASE.length} regime patterns from storage`);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load pattern database from storage:', error);
+      this.PATTERN_DATABASE = [];
+    }
+    
+    this.initialized = true;
+  }
+
+  /**
+   * Save pattern database to localStorage
+   */
+  private static savePatternDatabase(): void {
+    try {
+      if (typeof window !== 'undefined') {
+        // Keep only most recent patterns (limit size)
+        const patternsToSave = this.PATTERN_DATABASE
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, this.MAX_PATTERNS);
+        
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(patternsToSave));
+        this.PATTERN_DATABASE = patternsToSave;
+      }
+    } catch (error) {
+      console.warn('Failed to save pattern database to storage:', error);
+    }
+  }
 
   /**
    * ML-based regime detection using pattern recognition
    * Enhanced with multi-timeframe alignment and regime transition detection
    */
   static async detectRegimeML(priceData: PriceData[], symbol?: string): Promise<RegimeAnalysis> {
+    // Initialize pattern database from storage
+    this.initializePatternDatabase();
+    
     // Fallback to standard detection if insufficient data
     if (priceData.length < 52) {
       return RegimeDetector.detectRegime(priceData);
@@ -110,6 +160,11 @@ export class MLRegimeDetector {
 
     // Store in history for transition detection
     this.addToHistory(finalRegime, confidence);
+
+    // Store pattern in database if confidence is high enough
+    if (confidence >= 60 && classification.confidence >= 60) {
+      this.storePattern(features, finalRegime, confidence);
+    }
 
     return {
       regime: finalRegime,
@@ -469,6 +524,9 @@ export class MLRegimeDetector {
    * Match historical patterns
    */
   private static matchHistoricalPattern(features: RegimeFeatures): { match: boolean; confidence: number; regime?: MarketRegime } {
+    // Ensure database is initialized
+    this.initializePatternDatabase();
+    
     if (this.PATTERN_DATABASE.length < this.MIN_PATTERNS) {
       return { match: false, confidence: 0 };
     }
@@ -552,7 +610,8 @@ export class MLRegimeDetector {
   }
 
   /**
-   * Calculate RSI (Relative Strength Index)
+   * Calculate RSI (Relative Strength Index) using Wilder's Smoothing Method
+   * 🔒 FIXED: Now uses proper Wilder's smoothing instead of simple average
    */
   private static calculateRSI(data: PriceData[], period: number = 14): number {
     if (data.length < period + 1) return 50;
@@ -564,12 +623,31 @@ export class MLRegimeDetector {
       changes.push(prices[i] - prices[i - 1]);
     }
 
-    const recent = changes.slice(-period);
-    const gains = recent.filter(c => c > 0).reduce((a, b) => a + b, 0) / period;
-    const losses = Math.abs(recent.filter(c => c < 0).reduce((a, b) => a + b, 0)) / period;
+    // First period: Simple average
+    let gains = 0;
+    let losses = 0;
+    for (let i = 0; i < period; i++) {
+      if (changes[i] > 0) {
+        gains += changes[i];
+      } else {
+        losses += Math.abs(changes[i]);
+      }
+    }
+    
+    let avgGain = gains / period;
+    let avgLoss = losses / period;
+    
+    // Subsequent periods: Wilder's smoothing
+    for (let i = period; i < changes.length; i++) {
+      const currentGain = changes[i] > 0 ? changes[i] : 0;
+      const currentLoss = changes[i] < 0 ? Math.abs(changes[i]) : 0;
+      
+      avgGain = (avgGain * (period - 1) + currentGain) / period;
+      avgLoss = (avgLoss * (period - 1) + currentLoss) / period;
+    }
 
-    if (losses === 0) return 100;
-    const rs = gains / losses;
+    if (avgLoss === 0) return 100;
+    const rs = avgGain / avgLoss;
     return 100 - (100 / (1 + rs));
   }
 
@@ -757,9 +835,154 @@ export class MLRegimeDetector {
     if (this.REGIME_HISTORY.length > this.MAX_HISTORY) {
       this.REGIME_HISTORY.shift();
     }
+  }
 
-    // Store pattern for future matching
-    // (In production, this would be stored in a database)
+  /**
+   * Store pattern in database for future matching
+   */
+  private static storePattern(features: RegimeFeatures, regime: MarketRegime, confidence: number): void {
+    // Check if similar pattern already exists (avoid duplicates)
+    const similarityThreshold = 0.85; // Only store if significantly different
+    const isDuplicate = this.PATTERN_DATABASE.some(pattern => {
+      const similarity = this.calculateFeatureSimilarity(features, pattern.features);
+      return similarity > similarityThreshold && pattern.regime === regime;
+    });
+
+    if (!isDuplicate) {
+      const pattern: RegimePattern = {
+        features: { ...features }, // Deep copy
+        regime,
+        confidence,
+        timestamp: Date.now(),
+      };
+
+      this.PATTERN_DATABASE.push(pattern);
+
+      // Save to storage periodically (every 10 patterns to avoid excessive writes)
+      if (this.PATTERN_DATABASE.length % 10 === 0) {
+        this.savePatternDatabase();
+      }
+    }
+  }
+
+  /**
+   * Ensure patterns are saved (call before shutdown or periodically)
+   */
+  static ensurePatternsSaved(): void {
+    if (this.PATTERN_DATABASE.length > 0) {
+      this.savePatternDatabase();
+    }
+  }
+
+  /**
+   * Train pattern database from historical price data
+   * This can be called to populate the database with historical patterns
+   */
+  static async trainFromHistoricalData(
+    historicalData: Array<{ symbol: string; data: PriceData[] }>,
+    minConfidence: number = 60
+  ): Promise<number> {
+    this.initializePatternDatabase();
+    
+    let patternsAdded = 0;
+    
+    for (const { symbol, data } of historicalData) {
+      if (data.length < 52) continue; // Skip insufficient data
+      
+      try {
+        // Extract features
+        const features = this.extractEnhancedFeatures(data);
+        
+        // Classify regime
+        const classification = this.classifyRegime(features, data);
+        
+        // Only store if confidence is high enough
+        if (classification.confidence >= minConfidence) {
+          const wasDuplicate = this.PATTERN_DATABASE.some(pattern => {
+            const similarity = this.calculateFeatureSimilarity(features, pattern.features);
+            return similarity > 0.85 && pattern.regime === classification.regime;
+          });
+          
+          if (!wasDuplicate) {
+            this.PATTERN_DATABASE.push({
+              features: { ...features },
+              regime: classification.regime,
+              confidence: classification.confidence,
+              timestamp: Date.now(),
+            });
+            patternsAdded++;
+          }
+        }
+      } catch (error) {
+        console.warn(`Failed to process historical data for ${symbol}:`, error);
+      }
+    }
+    
+    // Save to storage
+    this.savePatternDatabase();
+    
+    console.log(`✅ Trained pattern database: Added ${patternsAdded} new patterns (Total: ${this.PATTERN_DATABASE.length})`);
+    return patternsAdded;
+  }
+
+  /**
+   * Get pattern database statistics
+   */
+  static getPatternDatabaseStats(): {
+    totalPatterns: number;
+    patternsByRegime: Record<MarketRegime, number>;
+    oldestPattern: number | null;
+    newestPattern: number | null;
+  } {
+    this.initializePatternDatabase();
+    
+    const patternsByRegime: Record<MarketRegime, number> = {
+      LOW_VOLATILITY_RANGE: 0,
+      HIGH_VOLATILITY_TREND: 0,
+      TRENDING_UP: 0,
+      TRENDING_DOWN: 0,
+      HIGH_VOLATILITY_RANGE: 0,
+      UNKNOWN: 0,
+    };
+    
+    let oldestTimestamp: number | null = null;
+    let newestTimestamp: number | null = null;
+    
+    for (const pattern of this.PATTERN_DATABASE) {
+      patternsByRegime[pattern.regime] = (patternsByRegime[pattern.regime] || 0) + 1;
+      
+      if (oldestTimestamp === null || pattern.timestamp < oldestTimestamp) {
+        oldestTimestamp = pattern.timestamp;
+      }
+      if (newestTimestamp === null || pattern.timestamp > newestTimestamp) {
+        newestTimestamp = pattern.timestamp;
+      }
+    }
+    
+    return {
+      totalPatterns: this.PATTERN_DATABASE.length,
+      patternsByRegime,
+      oldestPattern: oldestTimestamp,
+      newestPattern: newestTimestamp,
+    };
+  }
+
+  /**
+   * Clear pattern database (useful for resetting or testing)
+   */
+  static clearPatternDatabase(): void {
+    this.PATTERN_DATABASE = [];
+    this.initialized = false;
+    
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(this.STORAGE_KEY);
+      }
+    } catch (error) {
+      console.warn('Failed to clear pattern database from storage:', error);
+    }
+    
+    console.log('✅ Pattern database cleared');
   }
 
   /**

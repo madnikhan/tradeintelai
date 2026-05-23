@@ -89,6 +89,10 @@ export class MT5PriceDataProvider {
       const url = getBridgeUrl(`/historical/${symbol}?timeframe=${mt5Timeframe}&count=${count}`);
       
       const response = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true', // Skip ngrok free tier browser warning
+        },
         signal: AbortSignal.timeout(20000), // 20 second timeout
       });
 

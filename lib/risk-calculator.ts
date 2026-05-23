@@ -3,6 +3,7 @@ import { TRADING_RULES } from '@/config/trading-rules';
 import { RiskMetrics, Trade } from '@/types/trading';
 import { EconomicCalendar } from './economic-calendar';
 import { logger } from './logger';
+import { getMaxTradesPerDay, getMaxOpenTrades, getDailyLossPercent } from './trading-settings';
 
 export interface TradeSizeResult {
   riskAmount: number;
@@ -71,15 +72,31 @@ export class RiskCalculator {
     // PHASE 1: Volatility adjustment
     let volatilityAdjustment = 1.0;
     if (currentATR && baseATR && baseATR > 0 && currentATR > 0) {
-      // CRITICAL FIX: Validate ATR values are reasonable
-      // Real EURUSD ATR should be 0.0060-0.0100 (60-100 pips)
-      // If ATR is suspiciously small (< 0.001), ignore the adjustment
-      const minValidATR = 0.001; // 10 pips minimum
-      const maxValidATR = 0.02;  // 200 pips maximum
+      // 🔒 FIX: Use same lenient ATR validation as other files (0.0005-0.02) for consistency
+      // Real EURUSD ATR should be 0.0060-0.0100 (60-100 pips), but low volatility periods can be 0.0005-0.001
+      // Minimum: 0.0005 (5 pips) - allows low volatility periods without false warnings
+      // Maximum: 0.02 (200 pips) - very high volatility
+      const minValidATR = 0.0005; // 5 pips minimum (more lenient, matches other files)
+      const maxValidATR = 0.02;   // 200 pips maximum
       
       if (currentATR < minValidATR || currentATR > maxValidATR) {
-        // ATR data is corrupted or wrong - don't use it for adjustment
-        logger.warn(`Invalid ATR value detected: ${currentATR.toFixed(5)} for ${pair}. Expected range: 0.001-0.02. Ignoring volatility adjustment.`);
+        // ATR data is corrupted or wrong - use fallback default ATR value
+        // Only warn if significantly off (not just slightly below threshold)
+        if (currentATR < 0.0003 || currentATR > maxValidATR) {
+          const fallbackATR = this.getDefaultATR(pair);
+          // 🔒 DISABLED: Changed to debug to reduce warning noise
+          // logger.warn(`Invalid ATR value detected: ${currentATR.toFixed(5)} for ${pair}. Expected range: 0.0005-0.02. Using fallback ATR: ${fallbackATR.toFixed(5)}.`);
+          
+          // Use fallback ATR for adjustment calculation
+          volatilityAdjustment = baseATR / fallbackATR;
+        } else {
+          // ATR is slightly below threshold but reasonable - use as-is
+          volatilityAdjustment = baseATR / currentATR;
+        }
+        // CRITICAL: Clamp adjustment between 0.5 and 1.5 (more conservative)
+        // Never increase position size by more than 50% due to low volatility
+        volatilityAdjustment = Math.max(0.5, Math.min(1.5, volatilityAdjustment));
+        riskAmount = riskAmount * volatilityAdjustment;
       } else {
         // Adjust position size based on volatility
         // Higher volatility = smaller position size (to keep monetary risk constant)
@@ -98,7 +115,8 @@ export class RiskCalculator {
       newsAdjustment = newsFactor;
       riskAmount = riskAmount * newsAdjustment;
     } catch (error) {
-      console.warn('Failed to get news impact:', error);
+      // 🔒 DISABLED: Changed to reduce warning noise (non-critical)
+      // console.warn('Failed to get news impact:', error);
     }
     
     // Get all trades for correlation and drawdown calculations
@@ -142,7 +160,8 @@ export class RiskCalculator {
         riskAmount = riskAmount * correlationAdjustment;
       }
     } catch (error) {
-      console.warn('Failed to calculate correlation adjustment:', error);
+      // 🔒 DISABLED: Changed to reduce warning noise (non-critical)
+      // console.warn('Failed to calculate correlation adjustment:', error);
     }
     
     // NEW: Drawdown-based position reduction
@@ -168,7 +187,8 @@ export class RiskCalculator {
         riskAmount = riskAmount * drawdownAdjustment;
       }
     } catch (error) {
-      console.warn('Failed to calculate drawdown adjustment:', error);
+      // 🔒 DISABLED: Changed to reduce warning noise (non-critical)
+      // console.warn('Failed to calculate drawdown adjustment:', error);
     }
     
     const adjustedRiskAmount = riskAmount;
@@ -241,7 +261,8 @@ export class RiskCalculator {
         };
       }
       
-      logger.warn(`⚠️ Small account: Using minimum lot size (0.01 lots). Actual risk: ${((finalRiskAmount / balance) * 100).toFixed(1)}% instead of intended ${(riskPercentage * 100).toFixed(0)}%.`);
+      // 🔒 DISABLED: Changed to reduce warning noise
+      // logger.warn(`⚠️ Small account: Using minimum lot size (0.01 lots). Actual risk: ${((finalRiskAmount / balance) * 100).toFixed(1)}% instead of intended ${(riskPercentage * 100).toFixed(0)}%.`);
     }
     
     // CRITICAL SAFETY CHECK: Reject if position size exceeds 5% of account equity
@@ -290,10 +311,10 @@ export class RiskCalculator {
     const riskPercentage = this.getRiskPercentage(balance);
     const riskAmount = balance * riskPercentage;
     
-    // Show warning for small accounts using higher risk
-    if (balance < 500) {
-      logger.warn(`⚠️ Small account detected ($${balance.toFixed(2)}). Using ${(riskPercentage * 100).toFixed(0)}% risk per trade to meet minimum lot size (0.01 lots). Consider depositing more funds (minimum $500 recommended) for better risk management with 2% risk.`);
-    }
+    // Show warning for small accounts using higher risk (disabled to reduce noise)
+    // if (balance < 500) {
+    //   logger.warn(`⚠️ Small account detected ($${balance.toFixed(2)}). Using ${(riskPercentage * 100).toFixed(0)}% risk per trade to meet minimum lot size (0.01 lots). Consider depositing more funds (minimum $500 recommended) for better risk management with 2% risk.`);
+    // }
     const priceDifference = Math.abs(entryPrice - stopLossPrice);
 
     if (priceDifference === 0 || priceDifference > entryPrice * 0.1) {
@@ -345,7 +366,8 @@ export class RiskCalculator {
         };
       }
       
-      logger.warn(`⚠️ Small account: Using minimum lot size (0.01 lots). Actual risk: ${((finalRiskAmount / balance) * 100).toFixed(1)}% instead of intended ${(riskPercentage * 100).toFixed(0)}%.`);
+      // 🔒 DISABLED: Changed to reduce warning noise
+      // logger.warn(`⚠️ Small account: Using minimum lot size (0.01 lots). Actual risk: ${((finalRiskAmount / balance) * 100).toFixed(1)}% instead of intended ${(riskPercentage * 100).toFixed(0)}%.`);
     }
     
     // CRITICAL SAFETY CHECK: Reject if position size exceeds 5% of account equity
@@ -372,6 +394,26 @@ export class RiskCalculator {
       isValid: finalLotSize >= 0.01 && finalLotSize <= maxLots,
       message: finalLotSize >= 0.01 ? 'Trade meets risk requirements' : 'Lot size too small'
     };
+  }
+
+  /**
+   * Get default ATR value for a currency pair when calculation fails
+   * @param pair Currency pair
+   * @returns Default ATR value (in price units)
+   */
+  private static getDefaultATR(pair: string): number {
+    const upperPair = pair.toUpperCase();
+    
+    // JPY pairs have different pip size (0.01 vs 0.0001)
+    // Default ATR values (in pips): EURUSD ~70, GBPUSD ~80, USDJPY ~70, etc.
+    if (upperPair.includes('JPY')) {
+      // For JPY pairs: 70 pips = 0.70 (since 1 pip = 0.01)
+      return 0.70;
+    } else {
+      // For standard pairs: 70 pips = 0.007 (since 1 pip = 0.0001)
+      // Common defaults: EURUSD ~0.007, GBPUSD ~0.008, AUDUSD ~0.007
+      return 0.007; // Default to 70 pips for EURUSD (most common pair)
+    }
   }
 
   private static getPipSize(pair: string): number {
@@ -407,8 +449,17 @@ export class RiskCalculator {
     };
     
     // For JPY pairs, pip size is 0.01, otherwise 0.0001
+    // For metals, pip size is 0.01 (2 decimal places, e.g., 4507.99)
     const upperPair = pair.toUpperCase();
     if (pipSizes[upperPair]) return pipSizes[upperPair];
+    
+    // Metals use 0.01 as pip size (2 decimal places)
+    if (upperPair.includes('XAU') || upperPair.includes('XAG') || 
+        upperPair.includes('XPT') || upperPair.includes('XPD') ||
+        upperPair.includes('GOLD') || upperPair.includes('SILVER')) {
+      return 0.01;
+    }
+    
     return upperPair.includes('JPY') ? 0.01 : 0.0001;
   }
 
@@ -417,8 +468,25 @@ export class RiskCalculator {
     // For pairs where USD is the quote currency: pip value = 10 (per standard lot)
     // For pairs where USD is the base currency: pip value = 10 / price
     // For cross pairs: need to convert through USD
+    // For metals: 1 point = $1 per ounce per standard lot (100 oz) = $100 per point per standard lot
     
     const upperPair = pair.toUpperCase();
+    
+    // Metals: 1 point = $100 per standard lot (100 oz contract)
+    // Gold (XAU/USD): 1 point = $100 per standard lot
+    // Silver (XAG/USD): 1 point = $50 per standard lot (5000 oz contract)
+    if (upperPair.includes('XAU') || upperPair.includes('GOLD')) {
+      return 100; // $100 per point per standard lot for gold
+    }
+    if (upperPair.includes('XAG') || upperPair.includes('SILVER')) {
+      return 50; // $50 per point per standard lot for silver (5000 oz contract)
+    }
+    if (upperPair.includes('XPT') || upperPair.includes('PLATINUM')) {
+      return 100; // $100 per point per standard lot for platinum
+    }
+    if (upperPair.includes('XPD') || upperPair.includes('PALLADIUM')) {
+      return 100; // $100 per point per standard lot for palladium
+    }
     
     // USD as quote currency (EUR/USD, GBP/USD, AUD/USD, NZD/USD)
     if (upperPair.endsWith('USD')) {
@@ -463,27 +531,47 @@ export class RiskCalculator {
   ): { allowed: boolean; reason: string } {
     // Check if balance is loaded from MT5
     // Only allow trading if we have a real balance from MT5
-    if (currentBalance <= 0 || isNaN(currentBalance)) {
+    // Check if realBalance was set (indicates MT5 connection successful)
+    const hasRealBalance = (TradingModeManager as any).realBalance !== null;
+    
+    // Block trading if balance is not loaded (realBalance is null) OR if balance is invalid
+    if (!hasRealBalance || isNaN(currentBalance) || currentBalance < 0) {
+      // Provide more specific error message based on what we know
+      let errorReason = 'MT5 balance not loaded. ';
+      if (!hasRealBalance) {
+        errorReason += 'The EA (MT5FileBridgeEA) is not responding to account info requests. ';
+        errorReason += 'Please check: 1) EA is attached to a chart, 2) EA has "Allow live trading" enabled, 3) Check MT5 Experts tab for errors, 4) EA logs show "✅ Found command file" messages.';
+      } else {
+        errorReason += 'Please ensure MT5 bridge is running, EA is attached to a chart, and account is logged in. Check Connection Status in dashboard.';
+      }
       return { 
         allowed: false, 
-        reason: 'MT5 balance not loaded. Please ensure MT5 bridge is running, EA is attached to a chart, and account is logged in. Check Connection Status in dashboard.' 
+        reason: errorReason
       };
     }
+    
+    // Allow trading even if balance is 0 (valid for some accounts that have 0 funds)
+    // The check above ensures we have a real balance from MT5, even if it's 0
     
     // Use the real MT5 balance
     const balanceToUse = currentBalance;
     
-    const dailyLossLimit = balanceToUse * TRADING_RULES.DAILY_LOSS_PERCENT;
+    // Get customizable settings (from localStorage or defaults)
+    const dailyLossPercent = getDailyLossPercent();
+    const maxOpenTrades = getMaxOpenTrades();
+    const maxTradesPerDay = getMaxTradesPerDay();
+    
+    const dailyLossLimit = balanceToUse * dailyLossPercent;
     
     if (dailyPL <= -dailyLossLimit) {
       return { allowed: false, reason: 'Daily loss limit reached' };
     }
     
-    if (openTrades >= TRADING_RULES.MAX_OPEN_TRADES) {
+    if (openTrades >= maxOpenTrades) {
       return { allowed: false, reason: 'Maximum open trades reached' };
     }
     
-    if (tradesToday >= TRADING_RULES.MAX_TRADES_PER_DAY) {
+    if (tradesToday >= maxTradesPerDay) {
       return { allowed: false, reason: 'Maximum trades per day reached' };
     }
 

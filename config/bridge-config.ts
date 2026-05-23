@@ -117,14 +117,30 @@ export async function retryWithBackoff<T>(
 /**
  * Full URL for a bridge endpoint (uses live base URL each call).
  */
-export function getBridgeUrl(endpoint: string): string {
+export function getBridgeUrl(endpoint: string, accountLogin?: number): string {
   const base = getBridgeBaseUrl().replace(/\/$/, '');
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const fullUrl = `${base}${path}`;
+  let fullUrl = `${base}${path}`;
+
+  if (accountLogin) {
+    const sep = fullUrl.includes('?') ? '&' : '?';
+    fullUrl = `${fullUrl}${sep}account_login=${accountLogin}`;
+  }
 
   if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
     console.log(`[Bridge Config] Bridge URL: ${fullUrl}`);
   }
 
   return fullUrl;
+}
+
+/** Router mode when using central multi-bridge entry (port 8080 router). */
+export function getBridgeMode(): 'direct' | 'router' {
+  const mode = process.env.NEXT_PUBLIC_BRIDGE_MODE?.trim();
+  if (mode === 'router') return 'router';
+  const base = getBridgeBaseUrl();
+  if (base.includes('router') || process.env.NEXT_PUBLIC_BRIDGE_ROUTER === 'true') {
+    return 'router';
+  }
+  return 'direct';
 }

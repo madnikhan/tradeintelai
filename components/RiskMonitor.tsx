@@ -4,6 +4,7 @@ import { Trade } from '@/types/trading'
 import { TradingModeManager } from '@/lib/trading-mode'
 import { RiskCalculator, getRiskMetrics } from '@/lib/risk-calculator'
 import { TRADING_RULES } from '@/config/trading-rules'
+import { getMaxTradesPerDay, getMaxOpenTrades, getDailyLossPercent } from '@/lib/trading-settings'
 
 interface RiskMonitorProps {
   dailyProfitLoss: number
@@ -16,6 +17,11 @@ export function RiskMonitor({ dailyProfitLoss, openTrades, tradesToday }: RiskMo
   const mockTrades: Trade[] = []
   const riskMetrics = getRiskMetrics(balance, mockTrades)
   
+  // Get customizable settings
+  const maxOpenTrades = getMaxOpenTrades()
+  const maxTradesPerDay = getMaxTradesPerDay()
+  const dailyLossPercent = getDailyLossPercent()
+  
   const tradingPermission = RiskCalculator.canPlaceTrade(
     balance,
     dailyProfitLoss,
@@ -24,7 +30,7 @@ export function RiskMonitor({ dailyProfitLoss, openTrades, tradesToday }: RiskMo
   )
 
   const riskPercentage = riskMetrics.riskPercentage
-  const dailyLossLimit = balance * TRADING_RULES.DAILY_LOSS_PERCENT
+  const dailyLossLimit = balance * dailyLossPercent
   const dailyLossPercentage = Math.abs((dailyProfitLoss / balance) * 100) || 0
 
   return (
@@ -103,13 +109,13 @@ export function RiskMonitor({ dailyProfitLoss, openTrades, tradesToday }: RiskMo
           <div className="bg-[#141c2b] rounded-lg p-2.5">
             <p className="text-[10px] text-gray-500 mb-0.5">Open Trades</p>
             <p className="text-sm font-bold text-white font-mono">
-              {openTrades} <span className="text-gray-500">/ {TRADING_RULES.MAX_OPEN_TRADES}</span>
+              {openTrades} <span className="text-gray-500">/ {maxOpenTrades}</span>
             </p>
           </div>
           <div className="bg-[#141c2b] rounded-lg p-2.5">
             <p className="text-[10px] text-gray-500 mb-0.5">Trades Today</p>
             <p className="text-sm font-bold text-white font-mono">
-              {tradesToday} <span className="text-gray-500">/ {TRADING_RULES.MAX_TRADES_PER_DAY}</span>
+              {tradesToday} <span className="text-gray-500">/ {maxTradesPerDay}</span>
             </p>
           </div>
         </div>

@@ -12,11 +12,24 @@ export interface TradingConfig {
   monthlyTarget: number;
 }
 
+export type AssetType = 'forex' | 'metal' | 'stock' | 'commodity';
+
 export interface CurrencyPair {
   symbol: string;
   name: string;
   baseCurrency: string;
   quoteCurrency: string;
+  assetType?: AssetType; // Optional for backward compatibility
+}
+
+export interface TradingInstrument {
+  symbol: string;
+  name: string;
+  assetType: AssetType;
+  baseCurrency?: string; // For forex/metals
+  quoteCurrency?: string; // For forex/metals
+  exchange?: string; // For stocks
+  sector?: string; // For stocks
 }
 
 export interface RiskMetrics {
@@ -40,6 +53,9 @@ export interface Trade {
   profitLoss?: number;
   timestamp: Date;
   reason: string;
+  closePrice?: number;
+  closeTime?: Date;
+  closeReason?: string;
 }
 
 export interface Account {

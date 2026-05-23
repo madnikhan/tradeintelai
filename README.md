@@ -52,6 +52,16 @@ Open `http://localhost:3000/dashboard`
 
 ---
 
+## Production deployment (split architecture)
+
+Deploy the Next.js app to Vercel with Firebase + API keys; run the MT5 bridge on a **private host** (not serverless).
+
+See **[DEPLOYMENT.md](DEPLOYMENT.md)** for environment variables, security requirements, and tunnel setup.
+
+Local env template: copy **`.env.example`** → `.env.local`. If keys were exposed, follow **[SECRET_ROTATION.md](SECRET_ROTATION.md)**.
+
+---
+
 ## ✅ Verify Connection
 
 1. **Check Bridge Logs** - Should show:
@@ -126,6 +136,10 @@ tradeintelai/
 ## 📖 Documentation
 
 - **MT5 Bridge Details**: See `mt5-bridge/README.md`
+- **Colleague / remote bridge setup**: See [mt5-bridge/colleague/COLLEAGUE_SETUP.md](mt5-bridge/colleague/COLLEAGUE_SETUP.md)
+- **Stripe subscription ($50/mo)**: See [STRIPE_SETUP.md](STRIPE_SETUP.md)
+- **Production deployment**: See [DEPLOYMENT.md](DEPLOYMENT.md)
+- **Multi-account (50 accounts)**: See [SETUP_50_ACCOUNTS_GUIDE.md](SETUP_50_ACCOUNTS_GUIDE.md)
 - **Archived Files**: See `mt5-bridge/archive/README.md`
 
 ---
@@ -155,3 +169,5 @@ npm run lint
 - All trading rules are in `config/trading-rules.ts`
 - Demo mode is enabled by default (switch in dashboard)
 
+ngrok starting command
+ngrok start --all --config=ngrok.yml

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ParserMonitor } from '@/lib/data-providers/parser-monitor';
+import { requireApiAuth } from '@/lib/with-auth';
 
 // Mark route as dynamic
 export const dynamic = 'force-dynamic';
@@ -8,6 +9,9 @@ export const dynamic = 'force-dynamic';
  * Get parser performance statistics
  */
 export async function GET(request: NextRequest) {
+  const authError = await requireApiAuth(request);
+  if (authError) return authError;
+
   try {
     const summary = ParserMonitor.getSummary();
     const health = ParserMonitor.getHealthStatus();

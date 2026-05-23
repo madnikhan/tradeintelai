@@ -1,0 +1,44 @@
+# Dockerfile for MT5 Terminal with Wine
+# Build: docker build -f docker/Dockerfile.mt5 -t mt5-wine:latest .
+
+FROM ubuntu:22.04
+
+# Avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Wine and dependencies
+RUN apt-get update && apt-get install -y \
+    wine64 \
+    winetricks \
+    xvfb \
+    wget \
+    curl \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up Wine environment
+ENV WINEPREFIX=/root/.wine
+ENV WINEARCH=win64
+ENV DISPLAY=:99
+
+# Initialize Wine prefix
+RUN winecfg
+
+# Install Windows dependencies
+RUN winetricks -q corefonts vcrun2019
+
+# Create directories for MT5
+RUN mkdir -p /mt5/data /mt5/experts /mt5/scripts
+
+# Copy EA and scripts
+COPY MT5FileBridgeEA.mq5 /mt5/experts/
+COPY start-mt5.sh /start-mt5.sh
+RUN chmod +x /start-mt5.sh
+
+# Expose ports (will be mapped in docker-compose)
+EXPOSE 8080-8130
+
+# Start script
+CMD ["/start-mt5.sh"]
+

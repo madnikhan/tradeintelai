@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { accountManager, MT5Account } from '@/lib/account-manager';
 import { httpBridge } from '@/lib/http-bridge-connector';
+import { createMt5Account, findAccountByLogin } from '@/lib/firebase/mt5-accounts';
+import { loadUserBridgeSettings } from '@/lib/firebase/user-bridge-settings';
 
 export function AccountSelector() {
   const [accounts, setAccounts] = useState<MT5Account[]>([]);
@@ -17,7 +19,11 @@ export function AccountSelector() {
   });
 
   useEffect(() => {
-    loadAccounts();
+    void (async () => {
+      await loadUserBridgeSettings();
+      await accountManager.syncFromFirestore();
+      loadAccounts();
+    })();
   }, []);
 
   const loadAccounts = () => {
@@ -35,28 +41,61 @@ export function AccountSelector() {
     loadAccounts();
   };
 
-  const handleAddAccount = () => {
+  const handleAddAccount = async () => {
     if (!newAccount.name || !newAccount.login || !newAccount.server) {
       alert('Please fill in all required fields');
       return;
     }
 
+    const login = parseInt(newAccount.login, 10);
     accountManager.addAccount({
       name: newAccount.name,
-      login: parseInt(newAccount.login),
+      login,
       server: newAccount.server,
       password: newAccount.password || undefined,
     });
+
+    try {
+      const bridgeSettings = await loadUserBridgeSettings();
+      const bridgeUrl =
+        bridgeSettings.bridgeUrl ||
+        (typeof window !== 'undefined' ? localStorage.getItem('bridge_url') : null) ||
+        'http://localhost:8080';
+      await createMt5Account({
+        login,
+        server: newAccount.server,
+        name: newAccount.name,
+        bridgeUrl,
+        bridgeType: 'colleague',
+      });
+      await accountManager.syncFromFirestore();
+    } catch (e) {
+      console.warn('Firestore MT5 account create skipped:', e);
+    }
 
     setNewAccount({ name: '', login: '', server: '', password: '' });
     setIsAdding(false);
     loadAccounts();
   };
 
-  const handleSetActive = (id: string) => {
+  const applyBridgeForLogin = async (login: number) => {
+    try {
+      const record = await findAccountByLogin(login);
+      if (record?.bridgeUrl && typeof window !== 'undefined') {
+        localStorage.setItem('bridge_url', record.bridgeUrl);
+      }
+    } catch {
+      /* local-only mode */
+    }
+  };
+
+  const handleSetActive = async (id: string) => {
     accountManager.setActiveAccount(id);
+    const account = accountManager.getAccount(id);
+    if (account) {
+      await applyBridgeForLogin(account.login);
+    }
     loadAccounts();
-    // Refresh account data
     refreshAccountData();
   };
 

@@ -1,0 +1,27 @@
+# Dockerfile for MT5 Bridge (Manager and Router)
+# Build: docker build -f docker/Dockerfile.bridge -t mt5-bridge:latest .
+
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip install --no-cache-dir requests
+
+# Copy bridge files (will be mounted as volumes in docker-compose)
+# These are placeholders - actual files mounted at runtime
+COPY wine-mt5-connector.py /app/
+COPY multi-bridge-manager.py /app/
+COPY bridge-router.py /app/
+
+# Make scripts executable
+RUN chmod +x /app/*.py
+
+# Default command (can be overridden in docker-compose)
+CMD ["python3", "multi-bridge-manager.py"]
+

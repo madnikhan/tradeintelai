@@ -40,14 +40,21 @@ export function calculateAccountMetrics(
 
   // Daily P/L = only realized profit/loss from trades closed today
   const dailyProfitLoss = closedTradesToday.reduce((sum, trade) => {
-    return sum + (trade.profitLoss || 0);
+    // Type validation: Ensure profitLoss is a number
+    const profitLoss = typeof trade.profitLoss === 'number' ? trade.profitLoss : 0;
+    if (typeof trade.profitLoss !== 'number' && trade.profitLoss !== undefined && trade.profitLoss !== null) {
+      console.warn(`⚠️ Trade ${trade.id} (${trade.pair}) has invalid profitLoss type: ${typeof trade.profitLoss}. Expected number.`);
+    }
+    return sum + profitLoss;
   }, 0);
 
   // Calculate unrealized P/L separately (for display purposes)
   // This is the current profit/loss of all open positions
   const openTradesInArray = trades.filter(trade => trade.status === 'open');
   const unrealizedPLFromTrades = openTradesInArray.reduce((sum, trade) => {
-    return sum + (trade.profitLoss || 0);
+    // Type validation: Ensure profitLoss is a number
+    const profitLoss = typeof trade.profitLoss === 'number' ? trade.profitLoss : 0;
+    return sum + profitLoss;
   }, 0);
 
   // Also include any open positions from MT5 that might not be in trades array
@@ -87,13 +94,30 @@ export function calculateAccountMetrics(
   });
 
   const monthlyProfitLoss = closedTradesThisMonth.reduce((sum, trade) => {
-    return sum + (trade.profitLoss || 0);
+    // Type validation: Ensure profitLoss is a number
+    const profitLoss = typeof trade.profitLoss === 'number' ? trade.profitLoss : 0;
+    return sum + profitLoss;
   }, 0);
 
   // Calculate all-time P/L from all closed trades (regardless of date)
-  const allClosedTrades = trades.filter(trade => trade.status === 'closed');
+  const allClosedTrades = trades.filter(trade => {
+    const isClosed = trade.status === 'closed';
+    if (!isClosed) {
+      console.warn(`⚠️ Trade ${trade.id} (${trade.pair}) has status: "${trade.status}", expected "closed"`);
+    }
+    return isClosed;
+  });
+  
   const allTimeProfitLoss = allClosedTrades.reduce((sum, trade) => {
-    return sum + (trade.profitLoss || 0);
+    // Type validation: Ensure profitLoss is a number
+    const profitLoss = typeof trade.profitLoss === 'number' ? trade.profitLoss : 0;
+    if (profitLoss === 0 && trade.status === 'closed') {
+      console.warn(`⚠️ Trade ${trade.id} (${trade.pair}) has profitLoss: ${profitLoss}, might be missing P/L data`);
+    }
+    if (typeof trade.profitLoss !== 'number' && trade.profitLoss !== undefined && trade.profitLoss !== null) {
+      console.warn(`⚠️ Trade ${trade.id} (${trade.pair}) has invalid profitLoss type: ${typeof trade.profitLoss}. Expected number.`);
+    }
+    return sum + profitLoss;
   }, 0);
 
   // Debug logging for All Time P/L
@@ -101,7 +125,8 @@ export function calculateAccountMetrics(
     totalTrades: trades.length,
     closedTradesCount: allClosedTrades.length,
     allTimeProfitLoss,
-    sampleClosedTrades: allClosedTrades.slice(0, 3).map(t => ({
+    allClosedTradesPL: allClosedTrades.map(t => t.profitLoss || 0),
+    sampleClosedTrades: allClosedTrades.slice(0, 5).map(t => ({
       id: t.id,
       pair: t.pair,
       profitLoss: t.profitLoss,

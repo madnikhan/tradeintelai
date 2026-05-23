@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { enhanceErrorMessage, quickEnhanceError, type EnhancedError } from '@/lib/openai-error-enhancer';
+import { enhanceErrorMessage, quickEnhanceError, type EnhancedError } from '@/lib/ai-error-enhancer';
 
 interface ErrorMessageProps {
   title?: string;

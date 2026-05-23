@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireApiAuth } from '@/lib/with-auth';
 import { RSSNewsProvider } from '@/lib/data-providers/rss-news';
 import { SentimentParser } from '@/lib/data-providers/sentiment-parser';
 import { logger } from '@/lib/logger';
@@ -11,6 +12,9 @@ export const dynamic = 'force-dynamic';
  * Tests sentiment analysis for all major currency pairs
  */
 export async function GET(request: NextRequest) {
+  const authError = await requireApiAuth(request);
+  if (authError) return authError;
+
   const startTime = Date.now();
   const results: any = {
     timestamp: new Date().toISOString(),

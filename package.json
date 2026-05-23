@@ -13,7 +13,9 @@
     "test:watch": "vitest",
     "verify:gemini": "node scripts/verify-gemini-key.js",
     "verify:openai": "node scripts/verify-openai-key.js",
+    "verify:firebase-admin": "node scripts/verify-firebase-admin.cjs",
     "build:bridge": "bash scripts/build-bridge-download.sh",
+    "vercel:env-sync": "node scripts/sync-env-to-vercel.cjs",
     "cloudflare": "./start-cloudflare.sh",
     "cloudflare:stop": "./stop-cloudflare.sh"
   },

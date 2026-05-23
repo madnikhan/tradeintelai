@@ -28,18 +28,35 @@ export async function POST(request: NextRequest) {
   try {
     const stripe = getStripe();
     const priceId = getStripePriceId();
-    const existing = await getUserSubscription(auth.userId);
 
-    let customerId = existing.stripeCustomerId;
+    let customerId: string | undefined;
+    try {
+      const existing = await getUserSubscription(auth.userId);
+      customerId = existing.stripeCustomerId;
+    } catch (firestoreError) {
+      console.warn(
+        'Firestore unavailable during checkout; creating Stripe customer without cache:',
+        firestoreError instanceof Error ? firestoreError.message : firestoreError
+      );
+    }
+
     if (!customerId) {
       const customer = await stripe.customers.create({
         metadata: { firebaseUid: auth.userId },
+        email: email || undefined,
       });
       customerId = customer.id;
-      await upsertUserSubscription(auth.userId, {
-        status: 'none',
-        stripeCustomerId: customerId,
-      });
+      try {
+        await upsertUserSubscription(auth.userId, {
+          status: 'none',
+          stripeCustomerId: customerId,
+        });
+      } catch (persistError) {
+        console.warn(
+          'Could not persist Stripe customer to Firestore (checkout continues):',
+          persistError instanceof Error ? persistError.message : persistError
+        );
+      }
     }
 
     const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';

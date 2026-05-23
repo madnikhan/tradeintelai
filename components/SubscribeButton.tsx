@@ -15,7 +15,11 @@ export function SubscribeButton({ className = '' }: { className?: string }) {
       if (url) window.location.href = url;
       else setError('No checkout URL returned');
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Checkout failed');
+      const raw = e instanceof Error ? e.message : 'Checkout failed';
+      const friendly = raw.includes('UNAUTHENTICATED')
+        ? 'Server configuration error. The team is fixing Firebase credentials — try again shortly.'
+        : raw;
+      setError(friendly);
     } finally {
       setLoading(false);
     }

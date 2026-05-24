@@ -10,7 +10,7 @@
     "tauri": "tauri",
     "icons": "tauri icon assets/logo.png",
     "prepare:resources": "bash scripts/prepare-resources.sh",
-    "prepare:resources:release": "BUILD_DESKTOP=1 bash scripts/prepare-resources.sh",
+    "prepare:resources:release": "bash scripts/prepare-resources-release.sh",
     "build:desktop": "npm run icons && npm run prepare:resources:release && tauri build"
   },
   "dependencies": {

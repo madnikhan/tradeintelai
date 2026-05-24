@@ -140,7 +140,10 @@ function OnboardingContent() {
             </Link>
           </p>
           <BridgeDesktopDownloadButton className="px-6 py-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 font-medium disabled:opacity-50" />
-          <BridgeDownloadButton label="Download ZIP (advanced)" className="px-4 py-2 rounded-lg bg-[#1e2738] hover:bg-[#2a3548] text-sm" />
+          <p className="text-xs text-amber-500/90">
+            Use the button above for the standalone installer (.msi / .dmg / AppImage). The ZIP below is scripts-only and does not include the desktop app.
+          </p>
+          <BridgeDownloadButton label="Download ZIP (advanced — scripts only)" className="px-4 py-2 rounded-lg bg-[#1e2738] hover:bg-[#2a3548] text-sm" />
         </div>
 
         <div className="card border-[#1e2738] p-6 space-y-4">

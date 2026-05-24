@@ -1,0 +1,12 @@
+{
+  "identifier": "default",
+  "description": "Default permissions for TradeIntel Bridge",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "opener:default",
+    "autostart:default",
+    "allow-bridge-commands"
+  ]
+}

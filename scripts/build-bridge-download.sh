@@ -8,10 +8,16 @@ README="$ROOT/mt5-bridge/BRIDGE_README.txt"
 mkdir -p "$OUT"
 
 cat > "$README" <<'EOF'
-TradeIntel AI — MT5 Bridge (Quick Start)
-========================================
+TradeIntel AI — MT5 Bridge (Advanced / manual setup)
+====================================================
 
-WINDOWS (recommended)
+NOTE: This ZIP does NOT include the standalone desktop installer.
+For the recommended one-click setup, download "TradeIntel Bridge" from your
+dashboard onboarding page (.msi on Windows, .dmg on Mac, AppImage on Linux).
+
+This ZIP is for advanced users who want to run the bridge scripts manually.
+
+WINDOWS (manual)
 1. Install MetaTrader 5 Desktop and Python 3.10+ (python.org, add to PATH).
 2. Copy MT5FileBridgeEA.mq5 into MT5 → File → Open Data Folder → MQL5/Experts, compile (F7).
 3. Attach EA to a chart; enable Algo Trading.

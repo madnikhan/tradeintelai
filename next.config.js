@@ -1,5 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async redirects() {
+    return [
+      {
+        source: '/downloads/:path*',
+        destination: '/subscribe',
+        permanent: false,
+      },
+    ];
+  },
   // Exclude MT5 bridge directories from build (they're symlinks for local development only)
   webpack: (config, { isServer }) => {
     // Ignore mt5-commands and mt5-responses directories during build

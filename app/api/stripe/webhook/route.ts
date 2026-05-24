@@ -5,47 +5,12 @@ import {
   findUidByStripeCustomerId,
   upsertUserSubscription,
 } from '@/lib/stripe/subscription-store';
-import type { SubscriptionStatus } from '@/lib/stripe/types';
+import {
+  mapStripeStatus,
+  syncSubscriptionFromStripe,
+} from '@/lib/stripe/sync-subscription';
 
 export const runtime = 'nodejs';
-
-function mapStripeStatus(status: Stripe.Subscription.Status): SubscriptionStatus {
-  switch (status) {
-    case 'active':
-      return 'active';
-    case 'trialing':
-      return 'trialing';
-    case 'past_due':
-      return 'past_due';
-    case 'canceled':
-      return 'canceled';
-    case 'unpaid':
-      return 'unpaid';
-    default:
-      return 'none';
-  }
-}
-
-async function syncSubscription(subscription: Stripe.Subscription, uid: string) {
-  const sub = subscription as Stripe.Subscription & {
-    current_period_start?: number;
-    current_period_end?: number;
-  };
-  await upsertUserSubscription(uid, {
-    status: mapStripeStatus(subscription.status),
-    stripeCustomerId:
-      typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id,
-    stripeSubscriptionId: subscription.id,
-    priceId: subscription.items.data[0]?.price?.id,
-    currentPeriodStart: sub.current_period_start
-      ? new Date(sub.current_period_start * 1000)
-      : undefined,
-    currentPeriodEnd: sub.current_period_end
-      ? new Date(sub.current_period_end * 1000)
-      : undefined,
-    cancelAtPeriodEnd: subscription.cancel_at_period_end,
-  });
-}
 
 export async function POST(request: NextRequest) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
@@ -76,7 +41,7 @@ export async function POST(request: NextRequest) {
           const subId =
             typeof session.subscription === 'string' ? session.subscription : session.subscription.id;
           const subscription = await getStripe().subscriptions.retrieve(subId);
-          await syncSubscription(subscription, uid);
+          await syncSubscriptionFromStripe(subscription, uid);
         }
         break;
       }
@@ -96,7 +61,7 @@ export async function POST(request: NextRequest) {
           if (event.type === 'customer.subscription.deleted') {
             await upsertUserSubscription(uid, { status: 'canceled', stripeSubscriptionId: subscription.id });
           } else {
-            await syncSubscription(subscription, uid);
+            await syncSubscriptionFromStripe(subscription, uid);
           }
         }
         break;
@@ -129,7 +94,7 @@ export async function POST(request: NextRequest) {
             subscription.metadata?.firebaseUid ||
             (await findUidByStripeCustomerId(customerId)) ||
             undefined;
-          if (uid) await syncSubscription(subscription, uid);
+          if (uid) await syncSubscriptionFromStripe(subscription, uid);
         }
         break;
       }

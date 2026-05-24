@@ -1,15 +1,22 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { SubscribeButton } from '@/components/SubscribeButton';
-import { useSubscription } from '@/hooks/useSubscription';
+import { syncSubscriptionFromStripeApi, useSubscription, verifyCheckoutSession } from '@/hooks/useSubscription';
+import { isBridgeSetupComplete } from '@/lib/bridge-setup-status';
 
-export default function SubscribePage() {
+function SubscribeContent() {
   const { user, loading: authLoading } = useAuth();
-  const { active, loading: subLoading, status } = useSubscription();
+  const { active, loading: subLoading, status, refresh } = useSubscription();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sessionId = searchParams.get('session_id');
+  const syncedRef = useRef(false);
+
+  const [syncing, setSyncing] = useState(!!sessionId);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/');
@@ -17,11 +24,50 @@ export default function SubscribePage() {
 
   useEffect(() => {
     if (!subLoading && active) {
-      router.push('/dashboard');
+      async function redirectActive() {
+        const setupComplete = await isBridgeSetupComplete();
+        if (sessionId || !setupComplete) {
+          router.push('/onboarding');
+          return;
+        }
+        router.push('/dashboard');
+      }
+      redirectActive();
     }
-  }, [active, subLoading, router]);
+  }, [active, subLoading, router, sessionId]);
 
-  if (authLoading || subLoading) {
+  useEffect(() => {
+    if (!user || syncedRef.current || active) return;
+
+    syncedRef.current = true;
+    let cancelled = false;
+
+    async function activateExistingSubscription() {
+      setSyncing(true);
+      setSyncError(null);
+      try {
+        if (sessionId) {
+          await verifyCheckoutSession(sessionId);
+        } else {
+          await syncSubscriptionFromStripeApi();
+        }
+        await refresh();
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setSyncError(e instanceof Error ? e.message : 'Could not verify subscription');
+        }
+      } finally {
+        if (!cancelled) setSyncing(false);
+      }
+    }
+
+    activateExistingSubscription();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, sessionId, active, refresh]);
+
+  if (authLoading || subLoading || syncing) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-[#0a0e17] text-white">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500" />
@@ -55,6 +101,10 @@ export default function SubscribePage() {
             </p>
           ) : null}
 
+          {syncError ? (
+            <p className="text-rose-400 text-sm">{syncError}</p>
+          ) : null}
+
           <SubscribeButton />
         </div>
 
@@ -63,5 +113,19 @@ export default function SubscribePage() {
         </p>
       </div>
     </main>
+  );
+}
+
+export default function SubscribePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex items-center justify-center bg-[#0a0e17] text-white">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500" />
+        </main>
+      }
+    >
+      <SubscribeContent />
+    </Suspense>
   );
 }

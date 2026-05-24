@@ -122,6 +122,38 @@ function ensureLinked() {
   console.log(`Linked project: ${project.projectName} (${project.projectId})\n`);
 }
 
+function loadFirebaseServiceAccountKey(vars) {
+  const saPath = path.join(ROOT, 'firebase-service-account.json');
+  if (fs.existsSync(saPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(saPath, 'utf8'));
+      if (typeof parsed.private_key === 'string') {
+        parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+      }
+      console.log('Using firebase-service-account.json for FIREBASE_SERVICE_ACCOUNT_KEY');
+      return JSON.stringify(parsed);
+    } catch (e) {
+      console.warn('⚠️  firebase-service-account.json invalid:', e.message);
+    }
+  }
+
+  const raw = vars.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (!raw) return undefined;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.private_key === 'string') {
+      parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+    }
+    return JSON.stringify(parsed);
+  } catch {
+    console.warn(
+      '⚠️  FIREBASE_SERVICE_ACCOUNT_KEY in .env.local is not valid JSON — add firebase-service-account.json'
+    );
+    return undefined;
+  }
+}
+
 function loadVars() {
   if (!fs.existsSync(ENV_FILE)) {
     throw new Error('Missing .env.local');
@@ -129,21 +161,11 @@ function loadVars() {
 
   const vars = parseEnvFile(ENV_FILE);
 
-  if (!vars.FIREBASE_SERVICE_ACCOUNT_KEY) {
-    const saPath = path.join(ROOT, 'firebase-service-account.json');
-    if (fs.existsSync(saPath)) {
-      vars.FIREBASE_SERVICE_ACCOUNT_KEY = fs.readFileSync(saPath, 'utf8').trim();
-    }
+  const firebaseKey = loadFirebaseServiceAccountKey(vars);
+  if (firebaseKey) {
+    vars.FIREBASE_SERVICE_ACCOUNT_KEY = firebaseKey;
   } else {
-    try {
-      const parsed = JSON.parse(vars.FIREBASE_SERVICE_ACCOUNT_KEY);
-      if (typeof parsed.private_key === 'string') {
-        parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
-      }
-      vars.FIREBASE_SERVICE_ACCOUNT_KEY = JSON.stringify(parsed);
-    } catch {
-      console.warn('⚠️  FIREBASE_SERVICE_ACCOUNT_KEY is not valid JSON — sync may fail');
-    }
+    delete vars.FIREBASE_SERVICE_ACCOUNT_KEY;
   }
 
   if (!vars.NEXT_PUBLIC_APP_URL || vars.NEXT_PUBLIC_APP_URL.includes('localhost')) {

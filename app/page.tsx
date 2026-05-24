@@ -4,18 +4,30 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/AuthProvider'
 import { LoginForm } from '@/components/LoginForm'
+import { useSubscription } from '@/hooks/useSubscription'
+import { isBridgeSetupComplete } from '@/lib/bridge-setup-status'
 
 export default function Home() {
   const { user, loading } = useAuth()
+  const { active, loading: subLoading } = useSubscription()
   const router = useRouter()
 
   useEffect(() => {
-    if (!loading && user) {
-      router.push('/subscribe')
-    }
-  }, [user, loading, router])
+    if (loading || subLoading || !user) return
 
-  if (loading || user) {
+    async function redirect() {
+      if (!active) {
+        router.push('/subscribe')
+        return
+      }
+      const setupComplete = await isBridgeSetupComplete()
+      router.push(setupComplete ? '/dashboard' : '/onboarding')
+    }
+
+    redirect()
+  }, [user, loading, subLoading, active, router])
+
+  if (loading || subLoading || user) {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center p-8 bg-[#0a0e17] text-white safe-area-top safe-area-bottom">
         <div className="text-center space-y-4">

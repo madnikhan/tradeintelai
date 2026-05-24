@@ -1,0 +1,18 @@
+[[permission]]
+identifier = "allow-bridge-commands"
+description = "Bridge manager and settings commands"
+commands.allow = [
+  "get_bridge_status",
+  "get_dependency_status",
+  "get_tunnel_status",
+  "get_app_config",
+  "save_app_config",
+  "start_bridge",
+  "stop_bridge",
+  "start_tunnel",
+  "stop_tunnel",
+  "connect_dashboard",
+  "copy_ea_to_experts",
+  "open_mt5_data_folder",
+  "show_main_window",
+]

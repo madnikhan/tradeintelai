@@ -9,6 +9,9 @@ import { BillingPortalButton } from '@/components/BillingPortalButton';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { loadUserBridgeSettings, saveUserBridgeSettings } from '@/lib/firebase/user-bridge-settings';
 import { grantMt5AccountAccess } from '@/lib/firebase/mt5-accounts';
+import { BridgeDownloadButton } from '@/components/BridgeDownloadButton';
+import { BridgeDesktopDownloadButton } from '@/components/BridgeDesktopDownloadButton';
+import Link from 'next/link';
 
 export function Settings() {
   const [riskPercentage, setRiskPercentage] = useState<number>(TRADING_RULES.RISK_PERCENTAGE * 100);
@@ -62,7 +65,11 @@ export function Settings() {
     localStorage.setItem('settings_auto_scan', autoScanEnabled.toString());
     localStorage.setItem('settings_scan_interval', scanInterval.toString());
     setAIProvider(aiProvider);
-    saveUserBridgeSettings({ bridgeUrl: bridgeUrl.trim() || null, bridgeMode: 'direct' });
+    saveUserBridgeSettings({
+      bridgeUrl: bridgeUrl.trim() || null,
+      bridgeMode: 'direct',
+      bridgeSetupComplete: Boolean(bridgeUrl.trim()),
+    });
     window.dispatchEvent(new CustomEvent('ai-provider-changed', { detail: aiProvider }));
 
     setSaved(true);
@@ -289,12 +296,14 @@ export function Settings() {
             {active ? (
               <div className="flex flex-wrap gap-2">
                 <BillingPortalButton />
-                <a
+                <BridgeDesktopDownloadButton />
+                <BridgeDownloadButton label="ZIP bundle" className="px-4 py-2 rounded-lg bg-[#1e2738] text-gray-300 hover:text-white text-sm" />
+                <Link
                   href="/onboarding"
                   className="px-4 py-2 rounded-lg bg-[#1e2738] text-gray-300 hover:text-white text-sm"
                 >
-                  Download bridge
-                </a>
+                  Setup guide
+                </Link>
               </div>
             ) : (
               <SubscribeButton className="px-4 py-2 rounded-lg bg-cyan-500 text-white text-sm" />
@@ -308,6 +317,13 @@ export function Settings() {
             <span>🔗</span> MT5 Bridge
           </h3>
           <div className="space-y-4">
+            <p className="text-xs text-gray-400">
+              Requires MetaTrader 5 <strong className="text-gray-300">Desktop</strong> on Windows (or Mac with Wine).
+              The MT5 mobile app cannot run the bridge.{' '}
+              <Link href="/docs/client-platforms" className="text-cyan-400 hover:underline">
+                Platform guide
+              </Link>
+            </p>
             <div>
               <label className="block text-sm text-gray-400 mb-2">Tunnel URL</label>
               <input

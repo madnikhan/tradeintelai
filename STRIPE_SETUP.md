@@ -4,7 +4,7 @@
 
 1. **Product** → TradeIntel AI Pro
 2. **Price** → $50 USD / month recurring
-3. Copy **Price ID** → `STRIPE_PRICE_ID`
+3. Copy **Price ID** (`price_...`, not `prod_...`) → `STRIPE_PRICE_ID`
 
 ## 2. API keys
 

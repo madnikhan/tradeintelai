@@ -36,15 +36,21 @@ export async function upsertUserSubscription(
   const ref = await subscriptionRef(uid);
   const admin = await import('firebase-admin');
   const payload: Record<string, unknown> = {
-    ...data,
+    status: data.status,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
+
+  if (data.stripeCustomerId !== undefined) payload.stripeCustomerId = data.stripeCustomerId;
+  if (data.stripeSubscriptionId !== undefined) payload.stripeSubscriptionId = data.stripeSubscriptionId;
+  if (data.priceId !== undefined) payload.priceId = data.priceId;
+  if (data.cancelAtPeriodEnd !== undefined) payload.cancelAtPeriodEnd = data.cancelAtPeriodEnd;
   if (data.currentPeriodStart instanceof Date) {
     payload.currentPeriodStart = admin.firestore.Timestamp.fromDate(data.currentPeriodStart);
   }
   if (data.currentPeriodEnd instanceof Date) {
     payload.currentPeriodEnd = admin.firestore.Timestamp.fromDate(data.currentPeriodEnd);
   }
+
   await ref.set(payload, { merge: true });
 }
 

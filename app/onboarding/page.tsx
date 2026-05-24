@@ -1,72 +1,120 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { useSubscription } from '@/hooks/useSubscription';
-import { getAuthInstance } from '@/lib/firebase/config';
+import { useSubscription, verifyCheckoutSession } from '@/hooks/useSubscription';
+import { saveUserBridgeSettings } from '@/lib/firebase/user-bridge-settings';
+import { markBridgeSetupComplete } from '@/lib/bridge-setup-status';
+import { BridgeDownloadButton } from '@/components/BridgeDownloadButton';
+import { BridgeDesktopDownloadButton } from '@/components/BridgeDesktopDownloadButton';
+import Link from 'next/link';
 
-export default function OnboardingPage() {
+function OnboardingContent() {
   const { user, loading: authLoading } = useAuth();
   const { active, loading: subLoading, refresh } = useSubscription();
   const router = useRouter();
-  const [downloading, setDownloading] = useState(false);
+  const searchParams = useSearchParams();
+  const sessionId = searchParams.get('session_id');
+
   const [bridgeUrl, setBridgeUrl] = useState('');
   const [saved, setSaved] = useState(false);
+  const [activating, setActivating] = useState(!!sessionId);
+  const [activateError, setActivateError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/');
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    const timer = setTimeout(() => refresh(), 2000);
-    return () => clearTimeout(timer);
-  }, [refresh]);
+    if (!user || !sessionId) return;
+
+    let cancelled = false;
+
+    async function verifyAndRefresh() {
+      if (!sessionId) return;
+      setActivating(true);
+      setActivateError(null);
+      try {
+        await verifyCheckoutSession(sessionId);
+        await refresh();
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setActivateError(e instanceof Error ? e.message : 'Activation failed');
+        }
+      } finally {
+        if (!cancelled) setActivating(false);
+      }
+    }
+
+    verifyAndRefresh();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, sessionId, refresh]);
 
   useEffect(() => {
-    if (!subLoading && !active && user) {
-      router.push('/subscribe');
-    }
-  }, [active, subLoading, user, router]);
+    if (sessionId) return;
+    const timer = setTimeout(() => refresh(), 2000);
+    return () => clearTimeout(timer);
+  }, [sessionId, refresh]);
 
-  const handleDownload = async () => {
-    setDownloading(true);
-    try {
-      const auth = getAuthInstance();
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/download/bridge', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Download failed');
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'tradeintel-bridge.zip';
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Download failed');
-    } finally {
-      setDownloading(false);
-    }
+  useEffect(() => {
+    if (activating || subLoading || !user || active) return;
+    const timer = setTimeout(() => refresh(), 3000);
+    return () => clearTimeout(timer);
+  }, [activating, subLoading, active, user, refresh]);
+
+  useEffect(() => {
+    if (sessionId || activateError) return;
+    if (activating || subLoading || !user || active) return;
+    const timer = setTimeout(() => router.push('/subscribe'), 4000);
+    return () => clearTimeout(timer);
+  }, [activating, subLoading, active, user, router, sessionId, activateError]);
+
+  const saveBridgeUrl = async () => {
+    const url = bridgeUrl.trim();
+    if (!url) return;
+    localStorage.setItem('bridge_url', url);
+    await saveUserBridgeSettings({
+      bridgeUrl: url,
+      bridgeMode: 'direct',
+      bridgeSetupComplete: true,
+    });
+    markBridgeSetupComplete();
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
   };
 
-  const saveBridgeUrl = () => {
-    if (bridgeUrl.trim()) {
-      localStorage.setItem('bridge_url', bridgeUrl.trim());
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    }
-  };
-
-  if (authLoading || subLoading) {
+  if (authLoading || subLoading || activating) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#0a0e17] text-white">
+      <main className="min-h-screen flex flex-col items-center justify-center bg-[#0a0e17] text-white gap-4">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500" />
+        <p className="text-gray-400 text-sm">
+          {activating ? 'Activating your subscription…' : 'Loading…'}
+        </p>
+      </main>
+    );
+  }
+
+  if (!active) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center bg-[#0a0e17] text-white gap-4 p-6">
+        <p className="text-gray-400">
+          {activateError ? 'Subscription activation failed' : 'Checking subscription status…'}
+        </p>
+        {activateError && (
+          <>
+            <p className="text-rose-400 text-sm text-center max-w-md">{activateError}</p>
+            <button
+              type="button"
+              onClick={() => router.push('/subscribe')}
+              className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-sm font-medium"
+            >
+              Return to subscribe
+            </button>
+          </>
+        )}
       </main>
     );
   }
@@ -80,32 +128,47 @@ export default function OnboardingPage() {
         </div>
 
         <div className="card border-[#1e2738] p-6 space-y-4">
-          <h2 className="text-lg font-semibold">Step 1 — Download bridge software</h2>
+          <h2 className="text-lg font-semibold">Step 1 — Download TradeIntel Bridge app</h2>
           <p className="text-sm text-gray-400">
-            Includes Python bridge, MT5 EA, and setup scripts. Run on the PC where MetaTrader 5 is installed.
+            The desktop app includes Python, secure tunnel, and bridge files — no separate installs.
+            Run it on the PC where MetaTrader 5 Desktop is installed (Windows recommended).
           </p>
-          <button
-            type="button"
-            onClick={handleDownload}
-            disabled={downloading}
-            className="px-6 py-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 font-medium disabled:opacity-50"
-          >
-            {downloading ? 'Preparing download…' : 'Download MT5 Bridge (.zip)'}
-          </button>
+          <p className="text-xs text-gray-500">
+            MT5 mobile app (Android/iPhone) is not supported.{' '}
+            <Link href="/docs/client-platforms" className="text-cyan-400 hover:underline">
+              Read platform guide
+            </Link>
+          </p>
+          <BridgeDesktopDownloadButton className="px-6 py-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 font-medium disabled:opacity-50" />
+          <BridgeDownloadButton label="Download ZIP (advanced)" className="px-4 py-2 rounded-lg bg-[#1e2738] hover:bg-[#2a3548] text-sm" />
         </div>
 
         <div className="card border-[#1e2738] p-6 space-y-4">
-          <h2 className="text-lg font-semibold">Step 2 — Install & run bridge</h2>
+          <h2 className="text-lg font-semibold">Step 2 — Set up MT5 Expert Advisor</h2>
           <ol className="text-sm text-gray-300 space-y-2 list-decimal list-inside">
-            <li>Install MT5 and attach MT5FileBridgeEA to a chart</li>
-            <li>Run setup_colleague_bridge.py from the zip</li>
-            <li>Expose port 8080 with Cloudflare Tunnel or ngrok</li>
+            <li>Open the TradeIntel Bridge app and click <strong>Copy EA to Experts</strong></li>
+            <li>In MT5 MetaEditor, compile MT5FileBridgeEA (F7) and attach to a chart</li>
+            <li>Enable <strong>Algo Trading</strong> in MT5</li>
           </ol>
         </div>
 
         <div className="card border-[#1e2738] p-6 space-y-4">
           <h2 className="text-lg font-semibold">Step 3 — Connect dashboard</h2>
-          <label className="block text-sm text-gray-400">Your bridge tunnel URL</label>
+          <p className="text-sm text-gray-400">
+            In the TradeIntel Bridge app, click <strong>Connect dashboard</strong>. Your browser opens
+            with the dashboard linked automatically.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard')}
+            className="px-6 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 font-medium"
+          >
+            Open dashboard →
+          </button>
+          <p className="text-xs text-gray-500 pt-2">
+            Advanced (ZIP / manual tunnel): optional manual URL below.
+          </p>
+          <label className="block text-sm text-gray-400">Manual bridge tunnel URL (optional)</label>
           <input
             type="url"
             value={bridgeUrl}
@@ -113,7 +176,7 @@ export default function OnboardingPage() {
             placeholder="https://your-tunnel.trycloudflare.com"
             className="w-full px-4 py-2 bg-[#141c2b] border border-[#1e2738] rounded-lg"
           />
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <button
               type="button"
               onClick={saveBridgeUrl}
@@ -121,16 +184,23 @@ export default function OnboardingPage() {
             >
               {saved ? 'Saved ✓' : 'Save bridge URL'}
             </button>
-            <button
-              type="button"
-              onClick={() => router.push('/dashboard')}
-              className="px-6 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 font-medium"
-            >
-              Open dashboard →
-            </button>
           </div>
         </div>
       </div>
     </main>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex items-center justify-center bg-[#0a0e17] text-white">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500" />
+        </main>
+      }
+    >
+      <OnboardingContent />
+    </Suspense>
   );
 }

@@ -95,6 +95,22 @@ export async function startCheckout(): Promise<string | null> {
   return data.url ?? null;
 }
 
+export async function verifyCheckoutSession(sessionId: string): Promise<void> {
+  const res = await fetchWithAuth('/api/stripe/verify-session', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Could not activate subscription');
+}
+
+export async function syncSubscriptionFromStripeApi(): Promise<{ active: boolean }> {
+  const res = await fetchWithAuth('/api/stripe/sync-subscription', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Could not sync subscription');
+  return { active: !!data.active };
+}
+
 export async function openBillingPortal(): Promise<string | null> {
   const res = await fetchWithAuth('/api/stripe/create-portal-session', { method: 'POST' });
   const data = await res.json();

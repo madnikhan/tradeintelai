@@ -11,6 +11,7 @@ export type BridgeMode = 'direct' | 'router';
 export interface UserBridgeSettings {
   bridgeUrl: string | null;
   bridgeMode: BridgeMode;
+  bridgeSetupComplete?: boolean;
 }
 
 const LOCAL_KEY = 'user_bridge_settings';
@@ -41,6 +42,7 @@ export async function loadUserBridgeSettings(): Promise<UserBridgeSettings> {
       const settings: UserBridgeSettings = {
         bridgeUrl: data.bridgeUrl ?? null,
         bridgeMode: data.bridgeMode === 'router' ? 'router' : 'direct',
+        bridgeSetupComplete: data.bridgeSetupComplete === true,
       };
       localStorage.setItem(LOCAL_KEY, JSON.stringify(settings));
       if (settings.bridgeUrl) {
@@ -58,6 +60,9 @@ export async function saveUserBridgeSettings(settings: UserBridgeSettings): Prom
   localStorage.setItem(LOCAL_KEY, JSON.stringify(settings));
   if (settings.bridgeUrl) {
     localStorage.setItem('bridge_url', settings.bridgeUrl);
+  }
+  if (settings.bridgeSetupComplete || settings.bridgeUrl?.trim()) {
+    localStorage.setItem('bridge_setup_complete', 'true');
   }
   const uid = getUserId();
   if (!uid || uid === 'anonymous' || !isFirebaseConfigured()) return;

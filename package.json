@@ -6,7 +6,7 @@
     "bridge": "node scripts/run-bridge.cjs",
     "multi-bridge": "./start-multi-bridge.sh",
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/prepare-vercel-build.cjs && npm run build:bridge && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
@@ -15,6 +15,7 @@
     "verify:openai": "node scripts/verify-openai-key.js",
     "verify:firebase-admin": "node scripts/verify-firebase-admin.cjs",
     "build:bridge": "bash scripts/build-bridge-download.sh",
+    "build:bridge-desktop": "cd bridge-desktop && npm run prepare:resources && npm run build:desktop",
     "vercel:env-sync": "node scripts/sync-env-to-vercel.cjs",
     "cloudflare": "./start-cloudflare.sh",
     "cloudflare:stop": "./stop-cloudflare.sh"

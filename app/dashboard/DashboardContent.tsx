@@ -32,7 +32,7 @@ import { useSwipeGesture, attachSwipeListeners } from '@/lib/touch-gestures'
 import { logger } from '@/lib/logger'
 import { getBridgeUrl } from '@/config/bridge-config'
 import { AuthButton } from '@/components/AuthButton'
-import { SystemStatus } from '@/components/SystemStatus'
+import { BridgeSetupBanner } from '@/components/BridgeSetupBanner'
 
 const tabPanelFallback = () => <LoadingSkeleton type="card" />
 
@@ -900,6 +900,8 @@ export default function DashboardContent() {
               onSyncTrades={syncTrades}
               isSyncing={isLoadingTrades}
             />
+
+            <BridgeSetupBanner />
 
         {/* Tab Content */}
         <div className="py-2 sm:py-4">

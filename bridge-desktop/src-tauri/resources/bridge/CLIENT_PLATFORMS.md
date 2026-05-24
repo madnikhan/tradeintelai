@@ -1,0 +1,85 @@
+# TradeIntel AI — Client Platform Guide
+
+This guide explains which platforms support the MT5 bridge and how mobile users can connect.
+
+## Supported platforms
+
+### Windows (recommended)
+
+Native support. Best experience for clients and colleagues.
+
+1. Download **TradeIntel Bridge** desktop app from the dashboard (`/onboarding` or Settings).
+2. Install on the PC where **MetaTrader 5 Desktop** is installed.
+3. Open the app → **Copy EA to Experts** → compile in MetaEditor (F7) → attach to chart.
+4. Enable **Algo Trading** in MT5.
+5. Click **Connect dashboard** in the app (tunnel is automatic).
+
+**Requirements:** Windows 10+, MT5 Desktop. Python and cloudflared are bundled in the desktop app.
+
+**Advanced (ZIP):** Manual bridge zip still available for power users; requires separate Python and tunnel setup.
+
+### macOS / Linux (via Wine)
+
+Supported but more setup. MT5 must run under Wine with the same file-bridge layout.
+
+- Use `colleague/start_colleague_bridge.sh` or `start-wine-bridge.sh`.
+- See `colleague/COLLEAGUE_SETUP.md` in the zip.
+
+### Docker (advanced)
+
+Optional Docker setup under `mt5-bridge/docker/` for running MT5 + bridge in containers on Mac/Linux hosts. Still desktop MT5 + EA, not mobile.
+
+---
+
+## NOT supported: MT5 mobile app (Android / iPhone)
+
+The TradeIntel bridge uses:
+
+```
+Dashboard (browser) → HTTPS tunnel → Python bridge → JSON files → MT5 Expert Advisor → MT5 Desktop
+```
+
+The **MT5 mobile apps cannot**:
+
+- Run Expert Advisors (EAs)
+- Expose the `MQL5/Files` folder the bridge uses
+- Host the Python bridge software
+
+**Trading from the MT5 iPhone/Android app alone is not compatible with TradeIntel bridge/trading.**
+
+---
+
+## Mobile users: how to connect
+
+Mobile users can use TradeIntel from their **phone browser**, but the bridge must run elsewhere:
+
+| Setup | Description |
+|-------|-------------|
+| **Windows VPS (recommended)** | Rent a Windows VPS, install MT5 Desktop + bridge, keep it running 24/7. Open TradeIntel on your phone; dashboard connects via HTTPS tunnel to the VPS. |
+| **Home PC always on** | Same as VPS, but bridge runs on a home Windows PC with a tunnel (Cloudflare/ngrok). |
+| **Mobile MT5 only** | Not supported for bridge/trading. Analysis-only use would require a separate product mode (not available today). |
+
+### Mobile flow
+
+```
+Phone browser → tradeintelai.vercel.app/dashboard
+                      ↓ HTTPS
+              Cloudflare/ngrok tunnel
+                      ↓
+         Windows PC/VPS (Python bridge :8080)
+                      ↓
+              MT5 Desktop + EA
+```
+
+---
+
+## Quick reference
+
+| Question | Answer |
+|----------|--------|
+| Does the Python bridge work on Windows? | **Yes** — primary platform |
+| Can my client use MT5 on iPhone? | **Not for the bridge** — use phone browser + Windows VPS/PC |
+| Must MT5 and bridge be on the same machine? | **Yes** — shared filesystem for file IPC |
+| Can Vercel host the bridge? | **No** — bridge runs on client/colleague PC or VPS |
+
+For step-by-step install, see `colleague/COLLEAGUE_SETUP.md` inside the bridge zip.

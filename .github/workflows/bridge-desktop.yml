@@ -80,6 +80,7 @@ jobs:
 
   publish:
     needs: build
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -95,7 +96,12 @@ jobs:
           path: private/downloads/bridge-desktop
 
       - name: List installers
-        run: ls -lah private/downloads/bridge-desktop/
+        run: |
+          ls -lah private/downloads/bridge-desktop/ || true
+          if [ -z "$(ls -A private/downloads/bridge-desktop/ 2>/dev/null)" ]; then
+            echo "No installers built — skipping release"
+            exit 1
+          fi
 
       - name: Publish GitHub release
         env:

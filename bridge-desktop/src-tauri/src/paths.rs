@@ -182,6 +182,7 @@ pub fn which_python_windows() -> Result<PathBuf, ()> {
 pub fn which_cloudflared() -> Result<PathBuf, ()> {
     #[cfg(target_os = "windows")]
     {
+        use std::process::Command;
         let output = Command::new("where")
             .arg("cloudflared")
             .output()

@@ -79,3 +79,33 @@ GitHub Actions workflow `.github/workflows/bridge-desktop.yml` builds on Windows
 - **Mac/Linux** require MT5 Desktop via Wine; the app still manages the bridge.
 - MT5 **mobile apps cannot** run the EA — use a PC/VPS for the bridge.
 - Expected installer size: ~80–120 MB (includes Python + cloudflared).
+
+## Install troubleshooting
+
+### macOS — &quot;damaged and can&apos;t be opened&quot;
+
+This is **Gatekeeper**, not a corrupt DMG. The app is downloaded unsigned from the dashboard.
+
+1. Mount the `.dmg` → drag **TradeIntel Bridge** to **Applications**
+2. Clear quarantine on the **installed app**:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/TradeIntel Bridge.app"
+```
+
+Or **Right-click** the app → **Open** (first launch).
+
+**Apple Silicon (M1/M2/M3)** only for the current GitHub release (`aarch64.dmg`). Intel Macs need an x64 build.
+
+Open the app from **Applications**, not from inside the DMG.
+
+### Windows — SmartScreen
+
+Click **More info** → **Run anyway** if Windows blocks the unsigned MSI.
+
+### Linux — AppImage
+
+```bash
+chmod +x tradeintel-bridge*.AppImage
+./tradeintel-bridge*.AppImage
+```

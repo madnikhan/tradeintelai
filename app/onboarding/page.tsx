@@ -140,9 +140,29 @@ function OnboardingContent() {
             </Link>
           </p>
           <BridgeDesktopDownloadButton className="px-6 py-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 font-medium disabled:opacity-50" />
-          <p className="text-xs text-amber-500/90">
-            Use the button above for the standalone installer (.msi / .dmg / AppImage). The ZIP below is scripts-only and does not include the desktop app.
-          </p>
+          <details className="text-sm text-gray-400 border border-[#1e2738] rounded-lg p-4 space-y-2">
+            <summary className="cursor-pointer text-cyan-400 font-medium">
+              Install help — macOS &quot;damaged&quot; or Windows SmartScreen
+            </summary>
+            <div className="space-y-3 pt-2 text-xs text-gray-400">
+              <div>
+                <p className="font-semibold text-gray-300 mb-1">macOS</p>
+                <p>
+                  If macOS says the app is <strong className="text-amber-400">damaged</strong>, the download is fine — the app is unsigned. After installing to Applications, run:
+                </p>
+                <code className="block mt-1 p-2 bg-[#141c2b] rounded text-[11px] break-all">
+                  xattr -dr com.apple.quarantine &quot;/Applications/TradeIntel Bridge.app&quot;
+                </code>
+                <p className="mt-1">Or right-click the app → <strong>Open</strong> (first time). Current DMG is for <strong>Apple Silicon</strong> (M1/M2/M3).</p>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-300 mb-1">Windows</p>
+                <p>
+                  SmartScreen may warn the MSI is unrecognized → <strong>More info</strong> → <strong>Run anyway</strong>.
+                </p>
+              </div>
+            </div>
+          </details>
           <BridgeDownloadButton label="Download ZIP (advanced — scripts only)" className="px-4 py-2 rounded-lg bg-[#1e2738] hover:bg-[#2a3548] text-sm" />
         </div>
 

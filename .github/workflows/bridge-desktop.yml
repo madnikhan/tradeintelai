@@ -55,11 +55,6 @@ jobs:
         run: |
           npm run icons
           npm run prepare:resources:release
-          if [ "${{ matrix.os }}" = "macos-latest" ]; then
-            codesign --force --sign - src-tauri/resources/cloudflared/cloudflared || true
-            PY=$(find src-tauri/resources/python -name python3 -type f | head -1)
-            if [ -n "$PY" ]; then codesign --force --sign - "$PY" || true; fi
-          fi
           npm run tauri build
 
       - name: Collect installers

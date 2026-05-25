@@ -1,17 +1,12 @@
-import { readdir, readFile } from 'fs/promises';
+import { readdir, readFile, stat } from 'fs/promises';
 import path from 'path';
 
 export type BridgePlatform = 'windows' | 'mac' | 'linux';
+export type MacArch = 'arm64' | 'x64';
 
 const LOCAL_DIR = path.join(process.cwd(), 'private', 'downloads', 'bridge-desktop');
 const DEFAULT_RELEASE_TAG = 'bridge-desktop-v1.0.0';
 const DEFAULT_REPO = 'madnikhan/tradeintelai';
-
-const PLATFORM_MATCHERS: Record<BridgePlatform, (filename: string) => boolean> = {
-  windows: (f) => /\.msi$/i.test(f) || /\.exe$/i.test(f),
-  mac: (f) => /\.dmg$/i.test(f),
-  linux: (f) => /\.AppImage$/i.test(f),
-};
 
 export const CONTENT_TYPES: Record<BridgePlatform, string> = {
   windows: 'application/x-msi',
@@ -29,14 +24,66 @@ function githubHeaders(): Record<string, string> {
   return headers;
 }
 
+function isMacArm64Asset(filename: string): boolean {
+  return /aarch64|arm64/i.test(filename);
+}
+
+function isMacX64Asset(filename: string): boolean {
+  return (
+    (/x64|x86_64|intel/i.test(filename) || /\.dmg$/i.test(filename)) &&
+    !isMacArm64Asset(filename)
+  );
+}
+
+function pickMacDmg(filenames: string[], macArch?: MacArch | null): string | undefined {
+  const dmgs = filenames.filter((f) => /\.dmg$/i.test(f));
+  if (dmgs.length === 0) return undefined;
+
+  if (macArch === 'arm64') {
+    return dmgs.find(isMacArm64Asset) ?? dmgs[0];
+  }
+  if (macArch === 'x64') {
+    return dmgs.find(isMacX64Asset);
+  }
+  return dmgs.find(isMacArm64Asset) ?? dmgs[0];
+}
+
+function pickWindowsInstaller(filenames: string[]): string | undefined {
+  const msi = filenames.find((f) => /\.msi$/i.test(f));
+  if (msi) return msi;
+  return filenames.find((f) => /\.exe$/i.test(f));
+}
+
+function pickLinuxInstaller(filenames: string[]): string | undefined {
+  return filenames.find((f) => /\.AppImage$/i.test(f));
+}
+
+function pickInstallerFilename(
+  filenames: string[],
+  platform: BridgePlatform,
+  macArch?: MacArch | null
+): string | undefined {
+  switch (platform) {
+    case 'mac':
+      return pickMacDmg(filenames, macArch);
+    case 'windows':
+      return pickWindowsInstaller(filenames);
+    case 'linux':
+      return pickLinuxInstaller(filenames);
+  }
+}
+
 export async function findLocalInstaller(
-  platform: BridgePlatform
-): Promise<{ filePath: string; filename: string } | null> {
+  platform: BridgePlatform,
+  macArch?: MacArch | null
+): Promise<{ filePath: string; filename: string; size?: number } | null> {
   try {
     const files = await readdir(LOCAL_DIR);
-    const filename = files.find((f) => PLATFORM_MATCHERS[platform](f));
+    const filename = pickInstallerFilename(files, platform, macArch);
     if (!filename) return null;
-    return { filePath: path.join(LOCAL_DIR, filename), filename };
+    const filePath = path.join(LOCAL_DIR, filename);
+    const st = await stat(filePath);
+    return { filePath, filename, size: st.size };
   } catch {
     return null;
   }
@@ -47,6 +94,7 @@ interface GithubAsset {
   name: string;
   url: string;
   browser_download_url: string;
+  size?: number;
 }
 
 interface GithubRelease {
@@ -74,7 +122,8 @@ async function fetchLatestBridgeRelease(repo: string): Promise<GithubRelease | n
 }
 
 export async function findGithubReleaseInstaller(
-  platform: BridgePlatform
+  platform: BridgePlatform,
+  macArch?: MacArch | null
 ): Promise<{ asset: GithubAsset; contentType: string } | null> {
   const repo = process.env.GITHUB_REPOSITORY || DEFAULT_REPO;
   const tag = process.env.BRIDGE_DESKTOP_RELEASE_TAG || DEFAULT_RELEASE_TAG;
@@ -82,13 +131,22 @@ export async function findGithubReleaseInstaller(
     (await fetchReleaseByTag(repo, tag)) ?? (await fetchLatestBridgeRelease(repo));
   if (!release) return null;
 
-  const asset = release.assets.find((a) => PLATFORM_MATCHERS[platform](a.name));
+  const filename = pickInstallerFilename(
+    release.assets.map((a) => a.name),
+    platform,
+    macArch
+  );
+  if (!filename) return null;
+
+  const asset = release.assets.find((a) => a.name === filename);
   if (!asset) return null;
 
   return { asset, contentType: CONTENT_TYPES[platform] };
 }
 
-export async function downloadGithubAsset(asset: GithubAsset): Promise<ArrayBuffer> {
+export async function downloadGithubAsset(
+  asset: GithubAsset
+): Promise<{ buffer: ArrayBuffer; contentLength?: string }> {
   const token = process.env.GITHUB_TOKEN;
   const headers: Record<string, string> = {
     Accept: 'application/octet-stream',
@@ -105,9 +163,23 @@ export async function downloadGithubAsset(asset: GithubAsset): Promise<ArrayBuff
   if (!res.ok) {
     throw new Error(`GitHub asset download failed (${res.status})`);
   }
-  return res.arrayBuffer();
+
+  const contentLength =
+    res.headers.get('content-length') ??
+    (asset.size != null ? String(asset.size) : undefined);
+
+  return {
+    buffer: await res.arrayBuffer(),
+    contentLength,
+  };
 }
 
 export async function readLocalInstaller(filePath: string): Promise<Buffer> {
   return readFile(filePath);
+}
+
+export function parseMacArchParam(value: string | null): MacArch | null {
+  if (value === 'arm64' || value === 'aarch64') return 'arm64';
+  if (value === 'x64' || value === 'x86_64' || value === 'intel') return 'x64';
+  return null;
 }

@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import { getAuthInstance } from '@/lib/firebase/config';
+import { getPostDownloadTip, type BridgePlatform } from '@/lib/bridge-install-tips';
+import type { MacArch } from '@/lib/bridge-desktop-artifacts';
 
-function detectPlatform(): 'windows' | 'mac' | 'linux' {
+function detectPlatform(): BridgePlatform {
   if (typeof navigator === 'undefined') return 'windows';
   const ua = navigator.userAgent.toLowerCase();
   if (ua.includes('win')) return 'windows';
@@ -11,7 +13,18 @@ function detectPlatform(): 'windows' | 'mac' | 'linux' {
   return 'linux';
 }
 
-const LABELS: Record<string, string> = {
+function detectMacArch(): MacArch {
+  if (typeof navigator === 'undefined') return 'arm64';
+  const nav = navigator as Navigator & {
+    userAgentData?: { architecture?: string };
+  };
+  const arch = nav.userAgentData?.architecture;
+  if (arch === 'x86') return 'x64';
+  if (arch === 'arm') return 'arm64';
+  return 'arm64';
+}
+
+const LABELS: Record<BridgePlatform, string> = {
   windows: 'Download for Windows (.msi)',
   mac: 'Download for Mac (.dmg)',
   linux: 'Download for Linux (AppImage)',
@@ -26,13 +39,17 @@ export function BridgeDesktopDownloadButton({
 }: BridgeDesktopDownloadButtonProps) {
   const [downloading, setDownloading] = useState(false);
   const platform = detectPlatform();
+  const [macArch, setMacArch] = useState<MacArch>(() => detectMacArch());
 
   const handleDownload = async () => {
     setDownloading(true);
     try {
       const auth = getAuthInstance();
       const token = await auth.currentUser?.getIdToken();
-      const res = await fetch(`/api/download/bridge-desktop?platform=${platform}`, {
+      const params = new URLSearchParams({ platform });
+      if (platform === 'mac') params.set('arch', macArch);
+
+      const res = await fetch(`/api/download/bridge-desktop?${params}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) {
@@ -49,6 +66,8 @@ export function BridgeDesktopDownloadButton({
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+
+      alert(getPostDownloadTip(platform));
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Download failed');
     } finally {
@@ -57,8 +76,33 @@ export function BridgeDesktopDownloadButton({
   };
 
   return (
-    <button type="button" onClick={handleDownload} disabled={downloading} className={className}>
-      {downloading ? 'Preparing download…' : LABELS[platform]}
-    </button>
+    <div className="space-y-2">
+      {platform === 'mac' && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+          <span>Mac type:</span>
+          <label className="inline-flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              name="mac-arch"
+              checked={macArch === 'arm64'}
+              onChange={() => setMacArch('arm64')}
+            />
+            Apple Silicon (M1/M2/M3)
+          </label>
+          <label className="inline-flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              name="mac-arch"
+              checked={macArch === 'x64'}
+              onChange={() => setMacArch('x64')}
+            />
+            Intel Mac
+          </label>
+        </div>
+      )}
+      <button type="button" onClick={handleDownload} disabled={downloading} className={className}>
+        {downloading ? 'Preparing download…' : LABELS[platform]}
+      </button>
+    </div>
   );
 }

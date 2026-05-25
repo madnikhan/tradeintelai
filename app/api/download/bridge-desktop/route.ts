@@ -8,6 +8,7 @@ import {
   downloadGithubAsset,
   findGithubReleaseInstaller,
   findLocalInstaller,
+  parseMacArchParam,
   readLocalInstaller,
 } from '@/lib/bridge-desktop-artifacts';
 
@@ -19,6 +20,25 @@ function detectPlatform(userAgent: string, override?: string | null): BridgePlat
   if (ua.includes('win')) return 'windows';
   if (ua.includes('mac')) return 'mac';
   return 'linux';
+}
+
+function installerHeaders(
+  platform: BridgePlatform,
+  filename: string,
+  source: string,
+  contentLength?: string | number
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': CONTENT_TYPES[platform],
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    'Cache-Control': 'private, no-store',
+    'X-Bridge-Platform': platform,
+    'X-Bridge-Source': source,
+  };
+  if (contentLength != null) {
+    headers['Content-Length'] = String(contentLength);
+  }
+  return headers;
 }
 
 export async function GET(request: NextRequest) {
@@ -35,43 +55,44 @@ export async function GET(request: NextRequest) {
 
   const platformParam = request.nextUrl.searchParams.get('platform');
   const platform = detectPlatform(request.headers.get('user-agent') || '', platformParam);
+  const macArch =
+    platform === 'mac' ? parseMacArchParam(request.nextUrl.searchParams.get('arch')) : null;
 
-  const local = await findLocalInstaller(platform);
+  const local = await findLocalInstaller(platform, macArch);
   if (local) {
     const buffer = await readLocalInstaller(local.filePath);
     return new NextResponse(new Uint8Array(buffer), {
-      headers: {
-        'Content-Type': CONTENT_TYPES[platform],
-        'Content-Disposition': `attachment; filename="${local.filename}"`,
-        'Cache-Control': 'private, no-store',
-        'X-Bridge-Platform': platform,
-        'X-Bridge-Source': 'local',
-      },
+      headers: installerHeaders(platform, local.filename, 'local', local.size),
     });
   }
 
-  const github = await findGithubReleaseInstaller(platform);
+  const github = await findGithubReleaseInstaller(platform, macArch);
   if (github) {
     try {
-      const buffer = await downloadGithubAsset(github.asset);
+      const { buffer, contentLength } = await downloadGithubAsset(github.asset);
       return new NextResponse(buffer, {
-        headers: {
-          'Content-Type': github.contentType,
-          'Content-Disposition': `attachment; filename="${github.asset.name}"`,
-          'Cache-Control': 'private, no-store',
-          'X-Bridge-Platform': platform,
-          'X-Bridge-Source': 'github-release',
-        },
+        headers: installerHeaders(
+          platform,
+          github.asset.name,
+          'github-release',
+          contentLength
+        ),
       });
     } catch (e) {
       console.error('[bridge-desktop download] GitHub asset fetch failed:', e);
     }
   }
 
+  const archHint =
+    platform === 'mac' && macArch === 'x64'
+      ? ' Intel (x64) Mac installer is not published yet — try Apple Silicon or contact support.'
+      : '';
+
   return NextResponse.json(
     {
-      error: `Desktop installer for ${platform} is not available yet. Installers are built automatically — try again in a few minutes.`,
+      error: `Desktop installer for ${platform} is not available yet.${archHint} Installers are built automatically — try again in a few minutes.`,
       platform,
+      macArch: macArch ?? undefined,
     },
     { status: 503 }
   );

@@ -38,12 +38,17 @@ pub struct BridgeStatus {
     pub port: u16,
     pub mt5_connected: bool,
     pub mt5_files_dir: Option<String>,
+    pub commands_dir: Option<String>,
     pub python_path: Option<String>,
     pub bridge_root: Option<String>,
 }
 
-pub fn health_check_url(port: u16) -> String {
+pub fn health_check_url_quick(port: u16) -> String {
     format!("http://127.0.0.1:{port}/health?quick=1")
+}
+
+pub fn health_check_url_mt5(port: u16) -> String {
+    format!("http://127.0.0.1:{port}/health?mt5=1")
 }
 
 fn bridge_log_path() -> Option<PathBuf> {
@@ -76,9 +81,11 @@ struct BridgeManagerInner {
 impl BridgeManager {
     pub fn new(resource_dir: PathBuf) -> Self {
         let mut config = AppConfig::load();
-        if config.mt5_files_dir.is_none() {
-            if let Some(detected) = paths::detect_mt5_files_dir() {
+        let resolved = paths::resolve_mt5_files_dir(config.mt5_files_dir.as_deref());
+        if let Some(ref detected) = resolved {
+            if config.mt5_files_dir.as_deref() != Some(detected.to_string_lossy().as_ref()) {
                 config.mt5_files_dir = Some(detected.to_string_lossy().to_string());
+                let _ = config.save();
             }
         }
 
@@ -89,6 +96,7 @@ impl BridgeManager {
             port,
             mt5_connected: false,
             mt5_files_dir: config.mt5_files_dir.clone(),
+            commands_dir: None,
             python_path: None,
             bridge_root: Some(bundled_bridge_root(&resource_dir).to_string_lossy().to_string()),
         };
@@ -113,6 +121,24 @@ impl BridgeManager {
     }
 
     pub fn update_config(&self, config: AppConfig) -> Result<(), String> {
+        let mut config = config;
+        if let Some(ref raw) = config.mt5_files_dir {
+            if raw.trim().is_empty() {
+                config.mt5_files_dir = None;
+            } else if let Some(normalized) = paths::normalize_mt5_files_dir(raw) {
+                config.mt5_files_dir = Some(normalized.to_string_lossy().to_string());
+            } else if paths::is_invalid_mt5_files_override(raw) {
+                return Err(
+                    "Invalid MT5 Files path (looks like a URL or placeholder). Use File → Open Data Folder → MQL5 → Files."
+                        .to_string(),
+                );
+            }
+        }
+        if config.mt5_files_dir.is_none() {
+            if let Some(detected) = paths::detect_mt5_files_dir() {
+                config.mt5_files_dir = Some(detected.to_string_lossy().to_string());
+            }
+        }
         config.save()?;
         {
             let mut current = self.inner.config.lock();
@@ -132,7 +158,7 @@ impl BridgeManager {
             }
         }
 
-        let config = self.inner.config.lock().clone();
+        let mut config = self.inner.config.lock().clone();
         let bridge_root = bundled_bridge_root(&self.inner.resource_dir);
         let connector = bridge_root.join("wine-mt5-connector.py");
         if !connector.exists() {
@@ -140,6 +166,24 @@ impl BridgeManager {
                 "Bridge script not found at {}. Run npm run prepare:resources",
                 connector.display()
             ));
+        }
+
+        let mt5_files = paths::resolve_mt5_files_dir(config.mt5_files_dir.as_deref());
+        if let Some(ref files) = mt5_files {
+            let path_str = files.to_string_lossy().to_string();
+            config.mt5_files_dir = Some(path_str.clone());
+            let _ = config.save();
+            {
+                let mut cfg = self.inner.config.lock();
+                *cfg = config.clone();
+            }
+            append_bridge_log(&format!("MT5_FILES_DIR={path_str}"));
+        } else {
+            let msg = "MT5 Files folder not found. In MT5: File → Open Data Folder → MQL5 → Files, paste that path in Advanced → Save, then Start again.".to_string();
+            let mut status = self.inner.status.lock();
+            status.state = BridgeState::Error;
+            status.message = msg.clone();
+            return Err(msg);
         }
 
         let python = resolve_python_executable(&self.inner.resource_dir);
@@ -184,8 +228,8 @@ impl BridgeManager {
             cmd.stderr(Stdio::null());
         }
 
-        if let Some(ref files) = config.mt5_files_dir {
-            cmd.env("MT5_FILES_DIR", files);
+        if let Some(ref files) = mt5_files {
+            cmd.env("MT5_FILES_DIR", files.to_string_lossy().to_string());
         }
 
         let child = cmd.spawn().map_err(|e| {
@@ -221,8 +265,11 @@ impl BridgeManager {
         *polling = true;
 
         let inner = Arc::clone(&self.inner);
-        thread::spawn(move || loop {
+        thread::spawn(move || {
+            let mut poll_tick: u64 = 0;
+            loop {
             thread::sleep(Duration::from_secs(3));
+            poll_tick = poll_tick.wrapping_add(1);
 
             let port = inner.config.lock().bridge_port;
             let mut child_dead = false;
@@ -244,27 +291,53 @@ impl BridgeManager {
                 continue;
             }
 
-            let url = health_check_url(port);
+            let use_mt5_check = poll_tick % 5 == 0;
+            let url = if use_mt5_check {
+                health_check_url_mt5(port)
+            } else {
+                health_check_url_quick(port)
+            };
+            let timeout = if use_mt5_check {
+                Duration::from_secs(8)
+            } else {
+                Duration::from_secs(5)
+            };
+
             match reqwest::blocking::Client::builder()
-                .timeout(Duration::from_secs(5))
+                .timeout(timeout)
                 .build()
                 .and_then(|c| c.get(&url).send())
             {
                 Ok(resp) if resp.status().is_success() => {
-                    let mt5_connected = resp
-                        .json::<serde_json::Value>()
-                        .ok()
+                    let body = resp.json::<serde_json::Value>().ok();
+                    let mt5_connected = body
+                        .as_ref()
                         .and_then(|v| v.get("mt5_connected").and_then(|b| b.as_bool()))
                         .unwrap_or(false);
+                    let commands_dir = body
+                        .as_ref()
+                        .and_then(|v| v.get("commands_dir").and_then(|s| s.as_str()))
+                        .map(|s| s.to_string());
 
                     let mut status = inner.status.lock();
-                    status.mt5_connected = mt5_connected;
-                    if mt5_connected {
+                    if let Some(cmd) = commands_dir {
+                        status.commands_dir = Some(cmd);
+                    }
+                    if use_mt5_check {
+                        status.mt5_connected = mt5_connected;
+                    }
+                    if status.mt5_connected {
                         status.state = BridgeState::RunningConnected;
                         status.message = "MT5 connected".to_string();
-                    } else {
+                    } else if status.state != BridgeState::Starting {
                         status.state = BridgeState::RunningDisconnected;
-                        status.message = "Bridge running — attach MT5 EA".to_string();
+                        let hint = status.commands_dir.as_deref().unwrap_or("");
+                        if hint.is_empty() {
+                            status.message = "Bridge running — attach MT5 EA".to_string();
+                        } else {
+                            status.message =
+                                format!("Bridge running — attach MT5 EA (files: {hint})");
+                        }
                     }
                 }
                 _ => {
@@ -278,6 +351,7 @@ impl BridgeManager {
                     status.mt5_connected = false;
                 }
             }
+        }
         });
     }
 
@@ -291,13 +365,9 @@ impl BridgeManager {
         let (source_bytes, _) = validate_mq5_ea_file(&ea_src, "Bundled EA")?;
 
         let config = self.inner.config.lock().clone();
-        let files_dir = config
-            .mt5_files_dir
-            .as_ref()
-            .map(PathBuf::from)
-            .or_else(paths::detect_mt5_files_dir)
+        let files_dir = paths::resolve_mt5_files_dir(config.mt5_files_dir.as_deref())
             .ok_or_else(|| {
-                "MT5 Files folder not detected. Set path in settings or open MT5 → File → Open Data Folder".to_string()
+                "MT5 Files folder not detected. Set path in settings or open MT5 → File → Open Data Folder → MQL5 → Files".to_string()
             })?;
 
         let experts = paths::experts_dir_from_files(&files_dir);
@@ -328,11 +398,7 @@ impl BridgeManager {
 
     pub fn open_ea_in_metaeditor(&self) -> Result<String, String> {
         let config = self.inner.config.lock().clone();
-        let files_dir = config
-            .mt5_files_dir
-            .as_ref()
-            .map(PathBuf::from)
-            .or_else(paths::detect_mt5_files_dir)
+        let files_dir = paths::resolve_mt5_files_dir(config.mt5_files_dir.as_deref())
             .ok_or_else(|| "MT5 Files folder not detected".to_string())?;
         let dest = paths::experts_dir_from_files(&files_dir).join("MT5FileBridgeEA.mq5");
         if !dest.exists() {
@@ -352,11 +418,7 @@ impl BridgeManager {
 
     pub fn open_mt5_data_folder(&self) -> Result<(), String> {
         let config = self.inner.config.lock().clone();
-        let files_dir = config
-            .mt5_files_dir
-            .as_ref()
-            .map(PathBuf::from)
-            .or_else(paths::detect_mt5_files_dir)
+        let files_dir = paths::resolve_mt5_files_dir(config.mt5_files_dir.as_deref())
             .ok_or_else(|| "MT5 Files folder not detected".to_string())?;
 
         open_path(&files_dir)

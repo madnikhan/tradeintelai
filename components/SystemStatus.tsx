@@ -187,11 +187,11 @@ export function SystemStatus() {
     // 2. Check MT5 Bridge
     const checkMT5Bridge = async (): Promise<SystemStatus> => {
       try {
-        const bridgeUrl = getBridgeUrl('/health');
+        const bridgeUrl = getBridgeUrl('/health?mt5=1');
         console.log('[SystemStatus] Checking MT5 bridge at:', bridgeUrl);
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // Increased timeout to 10s for ngrok
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
 
         const response = await fetch(bridgeUrl, {
           method: 'GET',
@@ -224,18 +224,24 @@ export function SystemStatus() {
 
         const errorText = await response.text().catch(() => 'No error details');
         console.error('[SystemStatus] Bridge not responding:', response.status, errorText);
+
+        let message = `Bridge not responding (${response.status})`;
+        if (response.status === 404) {
+          message =
+            'Invalid bridge URL — use Connect dashboard in TradeIntel Bridge (tunnel URL, not the dashboard site). Open with ?bridge_url=https://YOUR-TUNNEL';
+        }
         
         return {
           id: 'mt5-bridge',
           name: 'MT5 Bridge',
           status: 'offline',
-          message: `Bridge not responding (${response.status})`,
+          message,
           lastChecked: new Date(),
         };
       } catch (error: any) {
         console.error('[SystemStatus] Bridge check error:', error);
 
-        const triedUrl = getBridgeUrl('/health');
+        const triedUrl = getBridgeUrl('/health?mt5=1');
         const isPageHttps =
           typeof window !== 'undefined' && window.location.protocol === 'https:';
         const triedLocalhost =

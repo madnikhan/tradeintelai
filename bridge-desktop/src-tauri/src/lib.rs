@@ -4,7 +4,7 @@ mod dependency_manager;
 mod paths;
 mod tunnel_manager;
 
-use bridge_manager::{health_check_url, BridgeManager, BridgeState, CopyEaResult};
+use bridge_manager::{health_check_url_quick, BridgeManager, BridgeState, CopyEaResult};
 use config::AppConfig;
 use dependency_manager::{ensure_dependencies, verify_dependencies, DependencyStatus};
 use std::path::{Path, PathBuf};
@@ -135,6 +135,7 @@ fn run_connect_dashboard(
 
     let port = manager.get_config().bridge_port;
     let tunnel_url = tunnel.start(port)?;
+    verify_tunnel_health(&tunnel_url)?;
 
     let mut config = manager.get_config();
     config.tunnel_url = Some(tunnel_url.clone());
@@ -190,9 +191,29 @@ fn clear_quarantine_on_bundled_binaries(resource_root: &Path) {
 #[cfg(not(target_os = "macos"))]
 fn clear_quarantine_on_bundled_binaries(_resource_root: &Path) {}
 
+fn verify_tunnel_health(tunnel_url: &str) -> Result<(), String> {
+    let base = tunnel_url.trim().trim_end_matches('/');
+    let url = format!("{base}/health?quick=1");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("Tunnel health check failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!(
+            "Tunnel is not forwarding to the bridge (HTTP {}). Check bridge is running on port 8080.",
+            resp.status()
+        ));
+    }
+    Ok(())
+}
+
 fn wait_for_bridge(manager: &BridgeManager) -> Result<(), String> {
     let port = manager.get_config().bridge_port;
-    let url = health_check_url(port);
+    let url = health_check_url_quick(port);
     let deadline = Instant::now() + Duration::from_secs(30);
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(5))

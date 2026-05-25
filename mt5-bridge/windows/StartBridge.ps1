@@ -5,15 +5,68 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Get-Mt5FilesActivityScore {
+  param([string]$FilesDir)
+  $score = 0
+  foreach ($sub in @('mt5-commands', 'mt5-responses')) {
+    $p = Join-Path $FilesDir $sub
+    if (Test-Path -LiteralPath $p) {
+      $cutoff = (Get-Date).AddHours(-24)
+      $recent = Get-ChildItem -LiteralPath $p -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -gt $cutoff }
+      if ($recent) { $score += 1000 }
+    }
+  }
+  if (Test-Path -LiteralPath $FilesDir) {
+    $score += [int64](Get-Item -LiteralPath $FilesDir).LastWriteTimeUtc.Ticks
+  }
+  return $score
+}
+
 function Find-Mt5FilesDir {
   param([string]$TerminalRoot)
   if (-not (Test-Path -LiteralPath $TerminalRoot)) { return $null }
+  $best = $null
+  $bestScore = -1
   $terminals = Get-ChildItem -LiteralPath $TerminalRoot -Directory -ErrorAction SilentlyContinue
   foreach ($t in $terminals) {
     $files = Join-Path $t.FullName "MQL5\Files"
-    if (Test-Path -LiteralPath $files) { return $files }
+    if (Test-Path -LiteralPath $files) {
+      $s = Get-Mt5FilesActivityScore -FilesDir $files
+      if ($s -gt $bestScore) { $bestScore = $s; $best = $files }
+    }
   }
-  return $null
+  return $best
+}
+
+function Find-BestMt5FilesDir {
+  $candidates = @()
+  $terminalRoot = Join-Path $env:APPDATA "MetaQuotes\Terminal"
+  $fromAppData = Find-Mt5FilesDir -TerminalRoot $terminalRoot
+  if ($fromAppData) { $candidates += $fromAppData }
+
+  if ($env:LOCALAPPDATA) {
+    $localRoot = Join-Path $env:LOCALAPPDATA "MetaQuotes\Terminal"
+    $fromLocal = Find-Mt5FilesDir -TerminalRoot $localRoot
+    if ($fromLocal -and $candidates -notcontains $fromLocal) { $candidates += $fromLocal }
+  }
+
+  foreach ($pf in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+    if ($pf) {
+      $direct = Join-Path $pf "MetaTrader 5\MQL5\Files"
+      if ((Test-Path -LiteralPath $direct) -and ($candidates -notcontains $direct)) {
+        $candidates += $direct
+      }
+    }
+  }
+
+  $best = $null
+  $bestScore = -1
+  foreach ($c in $candidates) {
+    $s = Get-Mt5FilesActivityScore -FilesDir $c
+    if ($s -gt $bestScore) { $bestScore = $s; $best = $c }
+  }
+  return $best
 }
 
 function Resolve-PythonLaunch {
@@ -51,8 +104,7 @@ Write-Host "=== MT5 Bridge (Windows) ===" -ForegroundColor Cyan
 Write-Host ""
 
 if (-not $env:MT5_FILES_DIR -or $env:MT5_FILES_DIR.Trim().Length -eq 0) {
-  $terminalRoot = Join-Path $env:APPDATA "MetaQuotes\Terminal"
-  $detected = Find-Mt5FilesDir -TerminalRoot $terminalRoot
+  $detected = Find-BestMt5FilesDir
   if ($detected) {
     $env:MT5_FILES_DIR = $detected
     Write-Host "Detected MT5_FILES_DIR: $($env:MT5_FILES_DIR)"

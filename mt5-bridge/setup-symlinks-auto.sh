@@ -8,8 +8,10 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 COMMANDS_DIR="$PROJECT_ROOT/mt5-commands"
 RESPONSES_DIR="$PROJECT_ROOT/mt5-responses"
 
-# Try common locations
+# Try common locations (MetaQuotes Mac Wine first)
 POSSIBLE_PATHS=(
+    "$HOME/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/Program Files/MetaTrader 5/MQL5/Files"
+    "$HOME/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/Program Files (x86)/MetaTrader 5/MQL5/Files"
     "$HOME/.wine/drive_c/Program Files/MetaTrader 5/MQL5/Files"
     "$HOME/.wine/drive_c/Program Files (x86)/MetaTrader 5/MQL5/Files"
     "$HOME/.wine/drive_c/users/$USER/AppData/Roaming/MetaQuotes/Terminal"

@@ -12,7 +12,7 @@ BUILD_DESKTOP="${BUILD_DESKTOP:-0}"
 mkdir -p "$BRIDGE" "$RES/python" "$RES/cloudflared" "$ICONS"
 
 MT5="$REPO/mt5-bridge"
-for f in wine-mt5-connector.py MT5FileBridgeEA.mq5 configure-paths.sh start-wine-bridge.sh CLIENT_PLATFORMS.md; do
+for f in wine-mt5-connector.py mt5_paths.py MT5FileBridgeEA.mq5 configure-paths.sh start-wine-bridge.sh CLIENT_PLATFORMS.md; do
   cp "$MT5/$f" "$BRIDGE/"
 done
 mkdir -p "$BRIDGE/colleague" "$BRIDGE/windows"

@@ -48,7 +48,7 @@ export class HTTPBridgeConnector {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout for health
       
-      const response = await fetch(getBridgeUrl('/health'), {
+      const response = await fetch(getBridgeUrl('/health?quick=1'), {
         signal: controller.signal,
         headers: this.getDefaultHeaders(),
       });

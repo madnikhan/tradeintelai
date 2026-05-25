@@ -16,6 +16,7 @@ interface BridgeStatus {
   port: number;
   mt5_connected: boolean;
   mt5_files_dir: string | null;
+  commands_dir: string | null;
   python_path: string | null;
   bridge_root: string | null;
 }
@@ -363,13 +364,33 @@ export default function App() {
         <div className="grid">
           <div>
             <span className="label">Bridge HTTP</span>
-            <span>{status?.port ? `http://127.0.0.1:${status.port}/health` : '—'}</span>
+            <span>
+              {status?.state === 'stopped' || status?.state === 'error'
+                ? '—'
+                : status?.port
+                  ? `http://127.0.0.1:${status.port}/health`
+                  : '—'}
+            </span>
+          </div>
+          <div>
+            <span className="label">Tunnel</span>
+            <span>{tunnelState === 'running' ? 'Connected' : TUNNEL_LABEL[tunnelState]}</span>
           </div>
           <div>
             <span className="label">MT5 EA</span>
             <span>{status?.mt5_connected ? 'Connected' : 'Disconnected'}</span>
           </div>
         </div>
+        {status?.commands_dir && !status.mt5_connected ? (
+          <p className="muted small path-hint">
+            Command files: <code>{status.commands_dir}</code>
+          </p>
+        ) : null}
+        {mt5Path ? (
+          <p className="muted small path-hint">
+            MT5 Files: <code>{mt5Path}</code>
+          </p>
+        ) : null}
       </section>
 
       <section className="actions">

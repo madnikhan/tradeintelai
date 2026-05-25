@@ -3,6 +3,52 @@
  * Centralized configuration for MT5 bridge connection
  */
 
+const TUNNEL_HOST_RE =
+  /\.(trycloudflare\.com|cfargotunnel\.com|ngrok-free\.app|ngrok\.io|ngrok\.app)$/i;
+
+/** Strip path/query; reject dashboard hosts mistaken for bridge URL. */
+export function normalizeBridgeBaseUrl(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
+    const host = parsed.hostname.toLowerCase();
+
+    if (host.includes('vercel.app')) return null;
+    if (host === 'tradeintelai.vercel.app' || host.endsWith('.tradeintelai.vercel.app')) {
+      return null;
+    }
+    if (host.includes('tradeintelai') && !TUNNEL_HOST_RE.test(host)) {
+      return null;
+    }
+    if (parsed.pathname && parsed.pathname !== '/' && !parsed.pathname.startsWith('/health')) {
+      // User pasted full dashboard URL — not a bridge origin
+      if (parsed.pathname.includes('dashboard')) return null;
+    }
+
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return null;
+  }
+}
+
+function persistBridgeUrl(url: string): void {
+  try {
+    localStorage.setItem('bridge_url', url);
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function clearInvalidBridgeUrl(): void {
+  try {
+    localStorage.removeItem('bridge_url');
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Get bridge URL from multiple sources (priority order).
  * Resolved on every read (client) so localStorage / URL changes apply without a full reload.
@@ -18,31 +64,33 @@ export function getBridgeBaseUrl(): string {
     const params = new URLSearchParams(window.location.search);
     const urlParam = params.get('bridge_url');
     if (urlParam) {
-      const trimmed = urlParam.trim();
-      if (trimmed) {
-        console.log('[Bridge Config] Using bridge URL from URL parameter:', trimmed);
-        try {
-          localStorage.setItem('bridge_url', trimmed);
-        } catch {
-          // ignore quota / private mode
-        }
-        return trimmed;
+      const normalized = normalizeBridgeBaseUrl(urlParam);
+      if (normalized) {
+        console.log('[Bridge Config] Using bridge URL from URL parameter:', normalized);
+        persistBridgeUrl(normalized);
+        return normalized;
       }
+      console.warn('[Bridge Config] Ignoring invalid bridge_url query param:', urlParam);
     }
 
     // Priority 2: localStorage (persists across visits; set via ?bridge_url= or DevTools)
     const storageUrl = localStorage.getItem('bridge_url');
     if (storageUrl?.trim()) {
-      const s = storageUrl.trim();
-      console.log('[Bridge Config] Using bridge URL from localStorage:', s);
-      return s;
+      const normalized = normalizeBridgeBaseUrl(storageUrl);
+      if (normalized) {
+        console.log('[Bridge Config] Using bridge URL from localStorage:', normalized);
+        return normalized;
+      }
+      console.warn('[Bridge Config] Clearing invalid bridge_url from localStorage:', storageUrl);
+      clearInvalidBridgeUrl();
     }
   }
 
   // Priority 3: Environment variable (baked at build time on client)
   const envUrl = process.env.NEXT_PUBLIC_BRIDGE_URL?.trim();
   if (envUrl) {
-    return envUrl;
+    const normalized = normalizeBridgeBaseUrl(envUrl);
+    if (normalized) return normalized;
   }
 
   // Priority 4: Default (same machine only)
@@ -118,7 +166,7 @@ export async function retryWithBackoff<T>(
  * Full URL for a bridge endpoint (uses live base URL each call).
  */
 export function getBridgeUrl(endpoint: string, accountLogin?: number): string {
-  const base = getBridgeBaseUrl().replace(/\/$/, '');
+  const base = getBridgeBaseUrl();
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   let fullUrl = `${base}${path}`;
 

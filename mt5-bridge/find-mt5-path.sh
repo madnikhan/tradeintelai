@@ -3,8 +3,24 @@
 
 echo "🔍 Searching for MT5 Files directory..."
 
-# Try common Wine paths
 HOME_DIR="$HOME"
+
+# MetaQuotes official Mac MT5 (IC Markets / broker installers)
+METAQUOTES_MAC=(
+    "$HOME_DIR/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/Program Files/MetaTrader 5/MQL5/Files"
+    "$HOME_DIR/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/Program Files (x86)/MetaTrader 5/MQL5/Files"
+)
+
+MT5_FILES_DIR=""
+for candidate in "${METAQUOTES_MAC[@]}"; do
+    if [ -d "$candidate" ]; then
+        MT5_FILES_DIR="$candidate"
+        echo "✅ Found MT5 Files (MetaQuotes Mac): $MT5_FILES_DIR"
+        break
+    fi
+done
+
+# Try common Wine paths
 WINE_PATHS=(
     "$HOME_DIR/.wine/drive_c/users/$USER/AppData/Roaming/MetaQuotes/Terminal"
     "$HOME_DIR/.wine/drive_c/Users/$USER/AppData/Roaming/MetaQuotes/Terminal"
@@ -12,8 +28,7 @@ WINE_PATHS=(
     "$HOME_DIR/.wine/drive_c/Users/$(whoami)/AppData/Roaming/MetaQuotes/Terminal"
 )
 
-MT5_FILES_DIR=""
-
+if [ -z "$MT5_FILES_DIR" ]; then
 for wine_base in "${WINE_PATHS[@]}"; do
     if [ -d "$wine_base" ]; then
         echo "📁 Found MetaQuotes Terminal directory: $wine_base"
@@ -31,6 +46,7 @@ for wine_base in "${WINE_PATHS[@]}"; do
         done
     fi
 done
+fi
 
 if [ -z "$MT5_FILES_DIR" ]; then
     echo "❌ Could not find MT5 Files directory automatically"

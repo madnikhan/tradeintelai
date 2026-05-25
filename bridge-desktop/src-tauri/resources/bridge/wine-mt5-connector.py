@@ -8,100 +8,42 @@ from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
+from mt5_paths import resolve_mt5_files_base, normalize_mt5_files_dir
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class WineMT5Connector:
     def __init__(self):
-        # Support account-specific directories via environment variables (for multi-bridge)
         commands_dir_name = os.environ.get('MT5_COMMANDS_DIR', 'mt5-commands')
         responses_dir_name = os.environ.get('MT5_RESPONSES_DIR', 'mt5-responses')
-        
-        # Try to find MT5 Files directory (Wine path)
-        # Common locations:
-        # ~/.wine/drive_c/Users/YourName/AppData/Roaming/MetaQuotes/Terminal/.../MQL5/Files/
-        # Or use project directory if MT5 Files folder not found
-        self.mt5_commands_dir = self._find_mt5_files_dir(commands_dir_name)
-        self.mt5_responses_dir = self._find_mt5_files_dir(responses_dir_name)
+
+        override = os.environ.get('MT5_FILES_DIR')
+        self.mql5_files_base = resolve_mt5_files_base(override)
+        self.using_mt5_files_override = bool(override and self.mql5_files_base)
+
+        if self.mql5_files_base:
+            self.mt5_commands_dir = os.path.join(self.mql5_files_base, commands_dir_name)
+            self.mt5_responses_dir = os.path.join(self.mql5_files_base, responses_dir_name)
+            logger.info(f"📁 Using MT5 MQL5/Files: {self.mql5_files_base}")
+        else:
+            bridge_root = os.environ.get('MT5_BRIDGE_ROOT') or os.path.dirname(os.path.abspath(__file__))
+            self.mt5_commands_dir = os.path.join(bridge_root, commands_dir_name)
+            self.mt5_responses_dir = os.path.join(bridge_root, responses_dir_name)
+            self.mql5_files_base = None
+            logger.warning(f"⚠️  Could not find MT5 Files directory. Using bridge folder: {bridge_root}")
+            logger.warning("⚠️  In MT5: File → Open Data Folder → MQL5 → Files, paste that path in TradeIntel Bridge Advanced")
+
         self.setup_directories()
-    
-    def _find_mt5_files_dir(self, subdir):
-        """Find MT5 Files directory or fall back to project directory"""
-        # Explicit override: point directly at MT5's MQL5\\Files directory.
-        # Example (Windows):
-        #   MT5_FILES_DIR=%APPDATA%\\MetaQuotes\\Terminal\\<hash>\\MQL5\\Files
-        # The bridge will then use:
-        #   <MT5_FILES_DIR>\\mt5-commands and <MT5_FILES_DIR>\\mt5-responses
-        explicit_files_dir = os.environ.get('MT5_FILES_DIR')
-        if explicit_files_dir:
-            mql5_files_base = os.path.abspath(os.path.expandvars(explicit_files_dir))
-            mql5_files = os.path.join(mql5_files_base, subdir)
-            logger.info(f"📁 Using MT5_FILES_DIR override: {mql5_files_base}")
-            return mql5_files
 
-        # Windows native MT5 path:
-        #   %APPDATA%\\MetaQuotes\\Terminal\\<hash>\\MQL5\\Files
-        if os.name == 'nt':
-            appdata = os.environ.get('APPDATA')
-            if appdata:
-                terminal_root = os.path.join(appdata, "MetaQuotes", "Terminal")
-                if os.path.exists(terminal_root):
-                    try:
-                        for terminal_dir in os.listdir(terminal_root):
-                            terminal_path = os.path.join(terminal_root, terminal_dir)
-                            if os.path.isdir(terminal_path):
-                                mql5_files_base = os.path.join(terminal_path, "MQL5", "Files")
-                                if os.path.exists(mql5_files_base):
-                                    mql5_files = os.path.join(mql5_files_base, subdir)
-                                    logger.info(f"📁 Found MT5 Files directory: {mql5_files_base}")
-                                    return mql5_files
-                    except Exception as e:
-                        logger.debug(f"Error checking {terminal_root}: {e}")
-
-        # Try common Wine paths
-        home = os.path.expanduser("~")
-        import getpass
-        username = getpass.getuser()
-        
-        wine_paths = [
-            os.path.join(home, ".wine", "drive_c", "users", username, "AppData", "Roaming", "MetaQuotes", "Terminal"),
-            os.path.join(home, ".wine", "drive_c", "Users", username, "AppData", "Roaming", "MetaQuotes", "Terminal"),
-            os.path.join(home, ".wine", "drive_c", "users", username.lower(), "AppData", "Roaming", "MetaQuotes", "Terminal"),
-            os.path.join(home, ".wine", "drive_c", "Users", username.lower(), "AppData", "Roaming", "MetaQuotes", "Terminal"),
-        ]
-        
-        # Look for MQL5/Files directory
-        for wine_base in wine_paths:
-            if os.path.exists(wine_base):
-                # Find all terminal directories
-                try:
-                    for terminal_dir in os.listdir(wine_base):
-                        terminal_path = os.path.join(wine_base, terminal_dir)
-                        if os.path.isdir(terminal_path):
-                            mql5_files_base = os.path.join(terminal_path, "MQL5", "Files")
-                            if os.path.exists(mql5_files_base):
-                                mql5_files = os.path.join(mql5_files_base, subdir)
-                                logger.info(f"📁 Found MT5 Files directory: {mql5_files_base}")
-                                return mql5_files
-                except Exception as e:
-                    logger.debug(f"Error checking {wine_base}: {e}")
-                    pass
-        
-        # Check bridge folder for symlinks (standalone zip or repo mt5-bridge/)
-        bridge_root = os.path.dirname(os.path.abspath(__file__))
-        project_dir = os.path.join(bridge_root, subdir)
-        if os.environ.get('MT5_BRIDGE_ROOT'):
-            project_dir = os.path.join(os.environ['MT5_BRIDGE_ROOT'], subdir)
-        if os.path.islink(project_dir):
-            # It's a symlink, resolve it
-            real_path = os.path.realpath(project_dir)
-            logger.info(f"📁 Found symlink to MT5 Files: {project_dir} -> {real_path}")
-            return real_path
-        
-        # Fall back to project directory
-        logger.warning(f"⚠️  Could not find MT5 Files directory. Using bridge folder: {project_dir}")
-        logger.warning(f"⚠️  Run './configure-paths.sh' from the bridge folder to link MT5 Files")
-        return project_dir
+    def health_info(self):
+        """Diagnostic fields for /health responses."""
+        return {
+            "commands_dir": self.mt5_commands_dir,
+            "responses_dir": self.mt5_responses_dir,
+            "mql5_files_dir": self.mql5_files_base,
+            "using_mt5_files_override": self.using_mt5_files_override,
+        }
         
     def setup_directories(self):
         """Create directories for MT5 communication"""
@@ -705,16 +647,34 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
         if self.path == '/health' or self.path.startswith('/health?'):
             try:
                 quick = 'quick=1' in self.path
+                mt5_check = 'mt5=1' in self.path
                 mt5_connected = False
+                health_extra = {}
+
                 if not quick:
                     try:
                         mt5 = self.get_mt5_connector()
-                        account_info = mt5.get_account_info()
-                        if account_info.get('success') and account_info.get('source') == 'REAL_MT5':
-                            mt5_connected = True
+                        health_extra = mt5.health_info()
+                        if mt5_check:
+                            mt5_connected = mt5.check_mt5_connection()
+                        else:
+                            account_info = mt5.get_account_info()
+                            if account_info.get('success') and account_info.get('source') == 'REAL_MT5':
+                                mt5_connected = True
                     except Exception:
                         pass
-                
+                else:
+                    try:
+                        mt5 = self.get_mt5_connector()
+                        health_extra = mt5.health_info()
+                    except Exception:
+                        pass
+
+                payload = {
+                    "status": "running",
+                    "mt5_connected": mt5_connected,
+                    **health_extra,
+                }
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.send_header('Access-Control-Allow-Origin', '*')
@@ -722,7 +682,7 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
                 self.send_header('Access-Control-Allow-Headers', 'Content-Type, ngrok-skip-browser-warning, Cache-Control')
                 self.send_header('Cache-Control', 'no-cache')
                 self.end_headers()
-                response = json.dumps({"status": "running", "mt5_connected": mt5_connected}).encode('utf-8')
+                response = json.dumps(payload).encode('utf-8')
                 self.wfile.write(response)
                 self.wfile.flush()
                 return

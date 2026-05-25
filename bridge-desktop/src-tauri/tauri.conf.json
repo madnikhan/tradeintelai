@@ -36,11 +36,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "resources/bridge/**/*",
-      "resources/python/**/*",
-      "resources/cloudflared/**/*"
-    ],
+    "resources": {
+      "resources/bridge/": "bridge/",
+      "resources/python/": "python/",
+      "resources/cloudflared/": "cloudflared/"
+    },
     "shortDescription": "TradeIntel MT5 Bridge",
     "longDescription": "Runs the TradeIntel MT5 bridge with connectivity status in the system tray.",
     "windows": {

@@ -165,16 +165,30 @@ fn wait_for_bridge(manager: &BridgeManager) -> Result<(), String> {
     )
 }
 
+/// Root directory containing `bridge/`, `python/`, and `cloudflared/`.
+/// Tauri bundles `resources/bridge/**` under `$RESOURCE/resources/bridge/` on macOS/Linux;
+/// dev builds use `src-tauri/resources/` directly.
 fn resource_dir(app: &AppHandle) -> PathBuf {
     if cfg!(debug_assertions) {
         let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources");
-        if dev.exists() {
+        if dev.join("bridge").exists() {
             return dev;
         }
     }
-    app.path()
+
+    let base = app
+        .path()
         .resource_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
+        .unwrap_or_else(|_| PathBuf::from("."));
+
+    let nested = base.join("resources");
+    if nested.join("bridge").exists() {
+        return nested;
+    }
+    if base.join("bridge").exists() {
+        return base;
+    }
+    nested
 }
 
 fn tray_tooltip_for_state(state: BridgeState) -> &'static str {

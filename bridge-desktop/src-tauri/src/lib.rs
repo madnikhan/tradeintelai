@@ -4,7 +4,7 @@ mod dependency_manager;
 mod paths;
 mod tunnel_manager;
 
-use bridge_manager::{health_check_url, BridgeManager, BridgeState};
+use bridge_manager::{health_check_url, BridgeManager, BridgeState, CopyEaResult};
 use config::AppConfig;
 use dependency_manager::{ensure_dependencies, verify_dependencies, DependencyStatus};
 use std::path::{Path, PathBuf};
@@ -82,8 +82,13 @@ fn stop_tunnel(state: State<AppState>) {
 }
 
 #[tauri::command]
-fn copy_ea_to_experts(state: State<AppState>) -> Result<String, String> {
+fn copy_ea_to_experts(state: State<AppState>) -> Result<CopyEaResult, String> {
     state.manager.copy_ea_to_experts()
+}
+
+#[tauri::command]
+fn open_ea_in_metaeditor(state: State<AppState>) -> Result<String, String> {
+    state.manager.open_ea_in_metaeditor()
 }
 
 #[tauri::command]
@@ -447,6 +452,7 @@ pub fn run() {
             start_tunnel,
             stop_tunnel,
             copy_ea_to_experts,
+            open_ea_in_metaeditor,
             open_mt5_data_folder,
             show_main_window,
             connect_dashboard,

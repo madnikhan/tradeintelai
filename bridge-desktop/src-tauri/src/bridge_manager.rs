@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::thread;
@@ -18,6 +18,17 @@ pub enum BridgeState {
     RunningDisconnected,
     RunningConnected,
     Error,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CopyEaResult {
+    pub dest_path: String,
+    pub line_count: usize,
+    pub source_bytes: u64,
+    pub dest_bytes: u64,
+    pub revealed_in_folder: bool,
+    pub metaeditor_launched: bool,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -270,12 +281,14 @@ impl BridgeManager {
         });
     }
 
-    pub fn copy_ea_to_experts(&self) -> Result<String, String> {
+    pub fn copy_ea_to_experts(&self) -> Result<CopyEaResult, String> {
         let bridge_root = bundled_bridge_root(&self.inner.resource_dir);
         let ea_src = bridge_root.join("MT5FileBridgeEA.mq5");
         if !ea_src.exists() {
             return Err("MT5FileBridgeEA.mq5 not found in bundle".to_string());
         }
+
+        let (source_bytes, _) = validate_mq5_ea_file(&ea_src, "Bundled EA")?;
 
         let config = self.inner.config.lock().clone();
         let files_dir = config
@@ -291,7 +304,50 @@ impl BridgeManager {
         fs::create_dir_all(&experts).map_err(|e| e.to_string())?;
         let dest = experts.join("MT5FileBridgeEA.mq5");
         std::fs::copy(&ea_src, &dest).map_err(|e| e.to_string())?;
-        Ok(format!("Copied EA to {}", dest.display()))
+
+        let (dest_bytes, dest_lines) = validate_mq5_ea_file(&dest, "Copied EA")?;
+
+        let revealed = reveal_file_in_folder(&dest);
+        let metaeditor = try_open_in_metaeditor(&dest);
+
+        let message = format!(
+            "Copied {dest_lines} lines ({dest_bytes} bytes) to {}",
+            dest.display()
+        );
+
+        Ok(CopyEaResult {
+            dest_path: dest.to_string_lossy().to_string(),
+            line_count: dest_lines,
+            source_bytes,
+            dest_bytes,
+            revealed_in_folder: revealed,
+            metaeditor_launched: metaeditor,
+            message,
+        })
+    }
+
+    pub fn open_ea_in_metaeditor(&self) -> Result<String, String> {
+        let config = self.inner.config.lock().clone();
+        let files_dir = config
+            .mt5_files_dir
+            .as_ref()
+            .map(PathBuf::from)
+            .or_else(paths::detect_mt5_files_dir)
+            .ok_or_else(|| "MT5 Files folder not detected".to_string())?;
+        let dest = paths::experts_dir_from_files(&files_dir).join("MT5FileBridgeEA.mq5");
+        if !dest.exists() {
+            return Err("MT5FileBridgeEA.mq5 not found in Experts. Click Copy EA to Experts first.".to_string());
+        }
+        validate_mq5_ea_file(&dest, "Experts EA")?;
+        if try_open_in_metaeditor(&dest) {
+            Ok(format!("Opened in MetaEditor: {}", dest.display()))
+        } else {
+            reveal_file_in_folder(&dest);
+            Err(format!(
+                "Could not launch MetaEditor. File is at {} — open it manually and press F7 to compile.",
+                dest.display()
+            ))
+        }
     }
 
     pub fn open_mt5_data_folder(&self) -> Result<(), String> {
@@ -304,6 +360,136 @@ impl BridgeManager {
             .ok_or_else(|| "MT5 Files folder not detected".to_string())?;
 
         open_path(&files_dir)
+    }
+}
+
+/// Reject dashboard URLs or truncated clipboard paste masquerading as an EA file.
+fn validate_mq5_ea_file(path: &Path, label: &str) -> Result<(u64, usize), String> {
+    let meta = fs::metadata(path).map_err(|e| format!("{label}: cannot read file: {e}"))?;
+    let bytes = meta.len();
+    if bytes < 500 {
+        return Err(format!(
+            "{label} is only {bytes} bytes — expected full MT5FileBridgeEA.mq5 source (1200+ lines)"
+        ));
+    }
+
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("{label}: cannot read text: {e}"))?;
+    let trimmed = content.trim();
+
+    if trimmed.starts_with("http://")
+        || trimmed.starts_with("https://")
+        || trimmed.contains("bridge_url=")
+        || trimmed.contains("vercel.app")
+        || trimmed.contains("trycloudflare.com")
+    {
+        return Err(format!(
+            "{label} looks like a dashboard URL, not MQL5 code. Do not paste after Connect dashboard — click Copy EA again."
+        ));
+    }
+
+    if !content.contains("#property") || !content.contains("OnInit") {
+        return Err(format!(
+            "{label} does not look like an Expert Advisor (missing #property / OnInit). Reinstall TradeIntel Bridge or copy again."
+        ));
+    }
+
+    let line_count = content.lines().count();
+    if line_count < 20 {
+        return Err(format!(
+            "{label} has only {line_count} lines — expected 1000+ lines of EA source"
+        ));
+    }
+
+    Ok((bytes, line_count))
+}
+
+fn reveal_file_in_folder(path: &Path) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .args(["/select,", &path.display().to_string()])
+            .spawn()
+            .is_ok()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .args(["-R", path.to_string_lossy().as_ref()])
+            .spawn()
+            .is_ok()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        path.parent()
+            .map(|parent| Command::new("xdg-open").arg(parent).spawn().is_ok())
+            .unwrap_or(false)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        let _ = path;
+        false
+    }
+}
+
+fn try_open_in_metaeditor(path: &Path) -> bool {
+    let path_str = path.to_string_lossy();
+
+    #[cfg(target_os = "windows")]
+    {
+        let candidates = [
+            r"C:\Program Files\MetaTrader 5\metaeditor64.exe",
+            r"C:\Program Files\MetaTrader 5\MetaEditor64.exe",
+            r"C:\Program Files (x86)\MetaTrader 5\metaeditor64.exe",
+        ];
+        for exe in candidates {
+            let exe_path = PathBuf::from(exe);
+            if exe_path.exists() {
+                return Command::new(&exe_path).arg(path).spawn().is_ok();
+            }
+        }
+        return Command::new("cmd")
+            .args(["/C", "start", "", path_str.as_ref()])
+            .spawn()
+            .is_ok();
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for app in ["MetaEditor", "MetaTrader 5"] {
+            if Command::new("open")
+                .args(["-a", app, path_str.as_ref()])
+                .spawn()
+                .is_ok()
+            {
+                return true;
+            }
+        }
+        return Command::new("open")
+            .arg(path_str.as_ref())
+            .spawn()
+            .is_ok();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for exe in ["metaeditor64", "wine metaeditor64.exe"] {
+            if Command::new("sh")
+                .arg("-c")
+                .arg(format!("{exe} '{}'", path.display()))
+                .spawn()
+                .is_ok()
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        let _ = path_str;
+        false
     }
 }
 

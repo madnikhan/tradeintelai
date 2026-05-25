@@ -13,6 +13,7 @@ commands.allow = [
   "stop_tunnel",
   "connect_dashboard",
   "copy_ea_to_experts",
+  "open_ea_in_metaeditor",
   "open_mt5_data_folder",
   "show_main_window",
 ]

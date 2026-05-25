@@ -22,8 +22,35 @@ Native support. Best experience for clients and colleagues.
 
 Supported but more setup. MT5 must run under Wine with the same file-bridge layout.
 
-- Use `colleague/start_colleague_bridge.sh` or `start-wine-bridge.sh`.
+1. Download **TradeIntel Bridge** `.dmg` from the dashboard (desktop app bundles Python + cloudflared).
+2. Install to **Applications** (see install troubleshooting below if macOS blocks the app).
+3. Open the app → **Copy EA to Experts** → compile → attach → **Connect dashboard**.
+
+**macOS install troubleshooting (if you see "damaged and can't be opened")**
+
+This is **not** a corrupt download. macOS Gatekeeper blocks unsigned apps downloaded from the browser.
+
+1. Mount the `.dmg` and drag **TradeIntel Bridge** to **Applications**
+2. Clear quarantine on the **installed app** (not only the DMG):
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/TradeIntel Bridge.app"
+```
+
+Or: **Right-click** the app in Applications → **Open** (first launch only).
+
+**Apple Silicon only:** Current CI builds `aarch64` DMG (M1/M2/M3). Intel Macs need a separate x64 build.
+
+**Advanced (ZIP):** Manual scripts zip still available; requires separate Python and tunnel setup.
+
+- Use `colleague/start_colleague_bridge.sh` or `start-wine-bridge.sh` from the zip.
 - See `colleague/COLLEAGUE_SETUP.md` in the zip.
+
+### Windows install troubleshooting (SmartScreen)
+
+If Windows shows **"Windows protected your PC"**, click **More info** → **Run anyway**. The MSI is unsigned until a code-signing certificate is added.
+
+---
 
 ### Docker (advanced)
 

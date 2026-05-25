@@ -63,6 +63,27 @@ header h1 {
   font-size: 0.85rem;
 }
 
+.ea-warning {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fcd34d;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.ea-path {
+  margin-top: 0.75rem;
+  word-break: break-all;
+}
+
+.ea-path code {
+  font-size: 0.72rem;
+  color: #a5f3fc;
+}
+
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

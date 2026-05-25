@@ -51,6 +51,16 @@ interface ConnectDashboardResult {
   clipboard_copied: boolean;
 }
 
+interface CopyEaResult {
+  dest_path: string;
+  line_count: number;
+  source_bytes: number;
+  dest_bytes: number;
+  revealed_in_folder: boolean;
+  metaeditor_launched: boolean;
+  message: string;
+}
+
 const STATE_LABEL: Record<BridgeState, string> = {
   stopped: 'Stopped',
   starting: 'Starting…',
@@ -94,6 +104,7 @@ export default function App() {
   const [mt5Path, setMt5Path] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [lastEaPath, setLastEaPath] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!inDesktop) return;
@@ -219,12 +230,45 @@ export default function App() {
 
   const handleCopyEa = async () => {
     if (!inDesktop) return;
+    const proceed = window.confirm(
+      'Copy the full MT5FileBridgeEA.mq5 (1200+ lines) into your MT5 Experts folder?\n\n' +
+        'Important: Do not paste (Cmd+V) into MetaEditor after Connect dashboard — that overwrites the EA with the dashboard URL.'
+    );
+    if (!proceed) return;
+
     setBusy(true);
     try {
-      const msg = await invoke<string>('copy_ea_to_experts');
-      setMessage(msg);
+      const result = await invoke<CopyEaResult>('copy_ea_to_experts');
+      setLastEaPath(result.dest_path);
+      const hints: string[] = [result.message];
+      if (result.revealed_in_folder) {
+        hints.push('Shown in Finder/Explorer — open MT5FileBridgeEA.mq5 there.');
+      }
+      if (result.metaeditor_launched) {
+        hints.push('MetaEditor opened — press F7 to compile, then attach to a chart.');
+      } else {
+        hints.push('Open MetaEditor manually if it did not launch.');
+      }
+      setMessage(hints.join(' '));
     } catch (e) {
       setMessage(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleOpenEaInMetaEditor = async () => {
+    if (!inDesktop) return;
+    setBusy(true);
+    try {
+      const msg = await invoke<string>('open_ea_in_metaeditor');
+      setMessage(msg);
+    } catch (e: unknown) {
+      const err = String(e);
+      setMessage(err);
+      if (lastEaPath) {
+        setMessage(`${err} File: ${lastEaPath}`);
+      }
     } finally {
       setBusy(false);
     }
@@ -339,8 +383,12 @@ export default function App() {
 
       <section className="panel">
         <h2>EA setup in MT5</h2>
+        <p className="ea-warning">
+          After <strong>Connect dashboard</strong>, your clipboard holds the dashboard URL —{' '}
+          <strong>do not paste</strong> into MetaEditor or you will replace the EA with one line of text.
+        </p>
         <ol className="steps">
-          <li>Copy MT5FileBridgeEA.mq5 to MT5 Experts folder</li>
+          <li>Copy MT5FileBridgeEA.mq5 to MT5 Experts folder (full source, 1000+ lines)</li>
           <li>Compile in MetaEditor (F7) and attach to a chart</li>
           <li>Enable Algo Trading in MT5</li>
         </ol>
@@ -348,10 +396,23 @@ export default function App() {
           <button type="button" onClick={handleCopyEa} disabled={busy || !inDesktop}>
             Copy EA to Experts
           </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={handleOpenEaInMetaEditor}
+            disabled={busy || !inDesktop}
+          >
+            Open in MetaEditor
+          </button>
           <button type="button" className="secondary" onClick={handleOpenMt5} disabled={!inDesktop}>
             Open MT5 data folder
           </button>
         </div>
+        {lastEaPath ? (
+          <p className="muted small ea-path">
+            Last copy: <code>{lastEaPath}</code>
+          </p>
+        ) : null}
       </section>
 
       <section className="panel advanced">

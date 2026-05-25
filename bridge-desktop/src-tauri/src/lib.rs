@@ -4,10 +4,10 @@ mod dependency_manager;
 mod paths;
 mod tunnel_manager;
 
-use bridge_manager::{BridgeManager, BridgeState};
+use bridge_manager::{health_check_url, BridgeManager, BridgeState};
 use config::AppConfig;
 use dependency_manager::{ensure_dependencies, verify_dependencies, DependencyStatus};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{
@@ -72,7 +72,7 @@ fn stop_bridge(state: State<AppState>) {
 fn start_tunnel(state: State<AppState>) -> Result<String, String> {
     let port = state.manager.get_config().bridge_port;
     let url = state.tunnel.start(port)?;
-    persist_tunnel_url(&state, &url)?;
+    persist_tunnel_url(&state.manager, &url)?;
     Ok(url)
 }
 
@@ -101,16 +101,41 @@ fn show_main_window(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn connect_dashboard(app: AppHandle, state: State<AppState>) -> Result<ConnectDashboardResult, String> {
-    ensure_dependencies(&state.resource_dir)?;
-    state.manager.start()?;
-    wait_for_bridge(&state.manager)?;
+async fn connect_dashboard(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ConnectDashboardResult, String> {
+    let app_handle = app.clone();
+    let manager = Arc::clone(&state.manager);
+    let tunnel = Arc::clone(&state.tunnel);
+    let resource_dir = state.resource_dir.clone();
 
-    let port = state.manager.get_config().bridge_port;
-    let tunnel_url = state.tunnel.start(port)?;
-    persist_tunnel_url(&state, &tunnel_url)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        run_connect_dashboard(&app_handle, &manager, &tunnel, &resource_dir)
+    })
+    .await
+    .map_err(|e| format!("Connect failed: {e}"))?
+}
 
-    let config = state.manager.get_config();
+fn run_connect_dashboard(
+    app: &AppHandle,
+    manager: &BridgeManager,
+    tunnel: &TunnelManager,
+    resource_dir: &PathBuf,
+) -> Result<ConnectDashboardResult, String> {
+    ensure_dependencies(resource_dir)?;
+    manager.start()?;
+    std::thread::sleep(Duration::from_millis(800));
+    wait_for_bridge(manager)?;
+
+    let port = manager.get_config().bridge_port;
+    let tunnel_url = tunnel.start(port)?;
+
+    let mut config = manager.get_config();
+    config.tunnel_url = Some(tunnel_url.clone());
+    manager.update_config(config)?;
+
+    let config = manager.get_config();
     let dashboard_base = config
         .dashboard_base_url
         .as_deref()
@@ -132,18 +157,40 @@ fn connect_dashboard(app: AppHandle, state: State<AppState>) -> Result<ConnectDa
     })
 }
 
-fn persist_tunnel_url(state: &State<AppState>, tunnel_url: &str) -> Result<(), String> {
-    let mut config = state.manager.get_config();
+fn persist_tunnel_url(manager: &BridgeManager, tunnel_url: &str) -> Result<(), String> {
+    let mut config = manager.get_config();
     config.tunnel_url = Some(tunnel_url.to_string());
-    state.manager.update_config(config)
+    manager.update_config(config)
 }
+
+/// macOS Gatekeeper quarantine on bundled binaries blocks Python/cloudflared from spawning.
+#[cfg(target_os = "macos")]
+fn clear_quarantine_on_bundled_binaries(resource_root: &Path) {
+    use std::process::Command;
+    for rel in [
+        "python/bin/python3",
+        "python/bin/python",
+        "cloudflared/cloudflared",
+    ] {
+        let p = resource_root.join(rel);
+        if p.exists() {
+            let _ = Command::new("xattr")
+                .args(["-dr", "com.apple.quarantine"])
+                .arg(&p)
+                .output();
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn clear_quarantine_on_bundled_binaries(_resource_root: &Path) {}
 
 fn wait_for_bridge(manager: &BridgeManager) -> Result<(), String> {
     let port = manager.get_config().bridge_port;
-    let url = format!("http://127.0.0.1:{port}/health");
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let url = health_check_url(port);
+    let deadline = Instant::now() + Duration::from_secs(30);
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(5))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -153,16 +200,29 @@ fn wait_for_bridge(manager: &BridgeManager) -> Result<(), String> {
                 return Ok(());
             }
         }
-        std::thread::sleep(Duration::from_millis(500));
+        if let Some(status) = check_bridge_process_exited(manager) {
+            return Err(status);
+        }
+        std::thread::sleep(Duration::from_millis(400));
     }
 
-    Err(
-        if cfg!(debug_assertions) {
-            "Bridge did not become ready in time. Run: npm run prepare:resources:release".to_string()
-        } else {
-            "Bridge did not start. Please reinstall TradeIntel Bridge.".to_string()
-        },
-    )
+    if let Some(status) = check_bridge_process_exited(manager) {
+        return Err(status);
+    }
+
+    Err(if cfg!(debug_assertions) {
+        "Bridge did not become ready in time. Check ~/Library/Application Support/TradeIntel Bridge/bridge.log".to_string()
+    } else {
+        "Bridge did not start. Check MT5 is open with the EA attached, or reinstall from the dashboard.".to_string()
+    })
+}
+
+fn check_bridge_process_exited(manager: &BridgeManager) -> Option<String> {
+    let status = manager.get_status();
+    if status.state == BridgeState::Error {
+        return Some(status.message);
+    }
+    None
 }
 
 /// Root directory containing `bridge/`, `python/`, and `cloudflared/`.
@@ -351,6 +411,7 @@ pub fn run() {
         ))
         .setup(|app| {
             let res = resource_dir(&app.handle());
+            clear_quarantine_on_bundled_binaries(&res);
             let manager = Arc::new(BridgeManager::new(res.clone()));
             let tunnel = Arc::new(TunnelManager::new(res.clone()));
             app.manage(AppState {

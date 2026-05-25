@@ -149,7 +149,7 @@ export default function App() {
   const handleConnectDashboard = async () => {
     if (!inDesktop || !allReady) return;
     setBusy(true);
-    setMessage('Starting bridge and secure tunnel…');
+    setMessage('Starting bridge and secure tunnel (this may take up to 30 seconds)…');
     try {
       const result = await invoke<ConnectDashboardResult>('connect_dashboard');
       setTunnelUrl(result.tunnel_url);

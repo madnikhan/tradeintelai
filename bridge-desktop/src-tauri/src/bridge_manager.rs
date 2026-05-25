@@ -2,6 +2,8 @@ use crate::config::AppConfig;
 use crate::paths::{self, bundled_bridge_root, resolve_python_executable};
 use parking_lot::Mutex;
 use serde::Serialize;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -27,6 +29,25 @@ pub struct BridgeStatus {
     pub mt5_files_dir: Option<String>,
     pub python_path: Option<String>,
     pub bridge_root: Option<String>,
+}
+
+pub fn health_check_url(port: u16) -> String {
+    format!("http://127.0.0.1:{port}/health?quick=1")
+}
+
+fn bridge_log_path() -> Option<PathBuf> {
+    dirs::data_local_dir().map(|d| d.join("TradeIntel Bridge").join("bridge.log"))
+}
+
+fn append_bridge_log(line: &str) {
+    if let Some(path) = bridge_log_path() {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = writeln!(f, "{line}");
+        }
+    }
 }
 
 pub struct BridgeManager {
@@ -129,8 +150,28 @@ impl BridgeManager {
                 "MT5_BRIDGE_ROOT",
                 bridge_root.to_string_lossy().to_string(),
             )
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stdout(Stdio::null());
+
+        if let Some(log_path) = bridge_log_path() {
+            if let Some(parent) = log_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if let Ok(log_file) = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+            {
+                cmd.stderr(Stdio::from(log_file));
+                append_bridge_log(&format!(
+                    "--- bridge start python={}",
+                    python.display()
+                ));
+            } else {
+                cmd.stderr(Stdio::null());
+            }
+        } else {
+            cmd.stderr(Stdio::null());
+        }
 
         if let Some(ref files) = config.mt5_files_dir {
             cmd.env("MT5_FILES_DIR", files);
@@ -192,9 +233,9 @@ impl BridgeManager {
                 continue;
             }
 
-            let url = format!("http://127.0.0.1:{port}/health");
+            let url = health_check_url(port);
             match reqwest::blocking::Client::builder()
-                .timeout(Duration::from_secs(8))
+                .timeout(Duration::from_secs(5))
                 .build()
                 .and_then(|c| c.get(&url).send())
             {
@@ -217,9 +258,11 @@ impl BridgeManager {
                 }
                 _ => {
                     let mut status = inner.status.lock();
-                    if status.state != BridgeState::Starting {
+                    if status.state == BridgeState::Starting {
+                        status.message = "Waiting for bridge HTTP…".to_string();
+                    } else if status.state != BridgeState::Stopped {
                         status.state = BridgeState::RunningDisconnected;
-                        status.message = "Bridge starting…".to_string();
+                        status.message = "Bridge unreachable — retry Start".to_string();
                     }
                     status.mt5_connected = false;
                 }
@@ -288,5 +331,3 @@ fn open_path(path: &PathBuf) -> Result<(), String> {
     }
     Ok(())
 }
-
-use std::fs;

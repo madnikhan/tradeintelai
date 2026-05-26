@@ -273,3 +273,46 @@ button.small {
 .dev-hint code {
   font-size: 0.7rem;
 }
+
+.mt5-error-help {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.mt5-error-help ol.steps.compact {
+  margin: 0.5rem 0 0;
+  padding-left: 1.15rem;
+  font-size: 0.78rem;
+  color: #d1d5db;
+}
+
+.mt5-error-help ol.steps.compact li {
+  margin: 0.2rem 0;
+}
+
+.warn-text {
+  color: #fcd34d;
+}
+
+.candidate-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  font-size: 0.72rem;
+}
+
+.candidate-list li {
+  padding: 0.35rem 0.5rem;
+  margin-bottom: 0.25rem;
+  border-radius: 6px;
+  background: #0d1321;
+  word-break: break-all;
+}
+
+.candidate-list li.selected {
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  color: #a5f3fc;
+}

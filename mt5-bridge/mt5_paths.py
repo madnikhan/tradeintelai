@@ -91,6 +91,24 @@ def _push_if_exists(candidates: List[str], path: Path) -> None:
             candidates.append(s)
 
 
+def _scan_program_files_for_mt5(candidates: List[str]) -> None:
+    if os.name != "nt":
+        return
+    for env_key in ("ProgramFiles", "ProgramFiles(x86)"):
+        root = os.environ.get(env_key)
+        if not root:
+            continue
+        try:
+            for entry in Path(root).iterdir():
+                if not entry.is_dir():
+                    continue
+                name = entry.name.lower()
+                if "metatrader" in name or "mt5" in name:
+                    _push_if_exists(candidates, entry / "MQL5" / "Files")
+        except OSError:
+            pass
+
+
 def _terminal_hashes_files_dirs(terminal_root: Path) -> List[str]:
     out: List[str] = []
     if not terminal_root.is_dir():
@@ -132,6 +150,8 @@ def collect_mt5_files_candidates() -> List[str]:
             terminal_root = Path(local) / "MetaQuotes" / "Terminal"
             for files in _terminal_hashes_files_dirs(terminal_root):
                 _push_if_exists(candidates, Path(files))
+
+        _scan_program_files_for_mt5(candidates)
     else:
         # macOS MetaQuotes official Wine
         metaquotes = (

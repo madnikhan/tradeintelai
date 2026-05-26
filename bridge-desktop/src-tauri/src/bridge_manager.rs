@@ -179,7 +179,7 @@ impl BridgeManager {
             }
             append_bridge_log(&format!("MT5_FILES_DIR={path_str}"));
         } else {
-            let msg = "MT5 Files folder not found. In MT5: File → Open Data Folder → MQL5 → Files, paste that path in Advanced → Save, then Start again.".to_string();
+            let msg = paths::MT5_FILES_NOT_FOUND_HELP.to_string();
             let mut status = self.inner.status.lock();
             status.state = BridgeState::Error;
             status.message = msg.clone();

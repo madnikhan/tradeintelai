@@ -5,6 +5,7 @@ mod paths;
 mod tunnel_manager;
 
 use bridge_manager::{health_check_url_quick, BridgeManager, BridgeState, CopyEaResult};
+use paths::Mt5FilesCandidatesResult;
 use config::AppConfig;
 use dependency_manager::{ensure_dependencies, verify_dependencies, DependencyStatus};
 use std::path::{Path, PathBuf};
@@ -94,6 +95,25 @@ fn open_ea_in_metaeditor(state: State<AppState>) -> Result<String, String> {
 #[tauri::command]
 fn open_mt5_data_folder(state: State<AppState>) -> Result<(), String> {
     state.manager.open_mt5_data_folder()
+}
+
+#[tauri::command]
+fn list_mt5_files_candidates(state: State<AppState>) -> Mt5FilesCandidatesResult {
+    let config = state.manager.get_config();
+    paths::list_mt5_files_candidates(config.mt5_files_dir.as_deref())
+}
+
+#[tauri::command]
+fn detect_mt5_files_dir_cmd(state: State<AppState>) -> Result<Option<String>, String> {
+    let detected = paths::detect_mt5_files_dir();
+    if let Some(ref path) = detected {
+        let mut config = state.manager.get_config();
+        config.mt5_files_dir = Some(path.to_string_lossy().to_string());
+        state.manager.update_config(config)?;
+        Ok(Some(path.to_string_lossy().to_string()))
+    } else {
+        Err(paths::MT5_FILES_NOT_FOUND_HELP.to_string())
+    }
 }
 
 #[tauri::command]
@@ -475,6 +495,8 @@ pub fn run() {
             copy_ea_to_experts,
             open_ea_in_metaeditor,
             open_mt5_data_folder,
+            list_mt5_files_candidates,
+            detect_mt5_files_dir_cmd,
             show_main_window,
             connect_dashboard,
         ])

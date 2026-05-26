@@ -112,6 +112,67 @@ fn push_if_exists(candidates: &mut Vec<PathBuf>, path: PathBuf) {
     }
 }
 
+/// User-facing steps when auto-detect fails (bridge cannot start without Files path).
+pub const MT5_FILES_NOT_FOUND_HELP: &str = "MT5 Files folder not found. \
+1) Open MetaTrader 5 and log in once. \
+2) In MT5: File → Open Data Folder → open MQL5 → Files (create Files if missing). \
+3) Copy that folder path into Advanced → MT5 Files path → Save settings. \
+4) Click Start bridge again. \
+Attaching the EA alone is not enough — the bridge needs the Files folder for commands.";
+
+#[derive(serde::Serialize, Clone)]
+pub struct Mt5FilesCandidateInfo {
+    pub path: String,
+    pub has_commands_dir: bool,
+    pub has_responses_dir: bool,
+}
+
+#[derive(serde::Serialize)]
+pub struct Mt5FilesCandidatesResult {
+    pub candidates: Vec<Mt5FilesCandidateInfo>,
+    pub selected_path: Option<String>,
+    pub appdata_terminal_root: Option<String>,
+}
+
+fn candidate_info(path: &Path) -> Mt5FilesCandidateInfo {
+    Mt5FilesCandidateInfo {
+        path: path.to_string_lossy().to_string(),
+        has_commands_dir: path.join("mt5-commands").is_dir(),
+        has_responses_dir: path.join("mt5-responses").is_dir(),
+    }
+}
+
+/// Scan Program Files (x86) for broker-specific MT5 installs (e.g. HFM MetaTrader 5).
+#[cfg(target_os = "windows")]
+fn scan_program_files_for_mt5(candidates: &mut Vec<PathBuf>) {
+    for env_key in ["ProgramFiles", "ProgramFiles(x86)"] {
+        let Ok(root) = std::env::var(env_key) else {
+            continue;
+        };
+        let root_path = PathBuf::from(&root);
+        let Ok(entries) = std::fs::read_dir(&root_path) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if name.contains("metatrader") || name.contains("mt5") {
+                push_if_exists(candidates, path.join("MQL5").join("Files"));
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn scan_program_files_for_mt5(_candidates: &mut Vec<PathBuf>) {}
+
 fn terminal_hashes_files_dirs(terminal_root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(terminal_root) else {
@@ -199,6 +260,8 @@ pub fn collect_mt5_files_candidates() -> Vec<PathBuf> {
                 push_if_exists(&mut candidates, files);
             }
         }
+
+        scan_program_files_for_mt5(&mut candidates);
     }
 
     #[cfg(target_os = "linux")]
@@ -241,6 +304,35 @@ pub fn detect_mt5_files_dir() -> Option<PathBuf> {
     let selected = select_best_mt5_files_dir(&candidates)?;
     let _ = ensure_mt5_bridge_dirs(&selected);
     Some(selected)
+}
+
+/// List all candidate paths and which would be auto-selected (for UI diagnostics).
+pub fn list_mt5_files_candidates(user_override: Option<&str>) -> Mt5FilesCandidatesResult {
+    let appdata_terminal_root = std::env::var("APPDATA")
+        .ok()
+        .map(|a| PathBuf::from(a).join("MetaQuotes").join("Terminal"))
+        .filter(|p| p.is_dir())
+        .map(|p| p.to_string_lossy().to_string());
+
+    if let Some(raw) = user_override {
+        if !raw.trim().is_empty() {
+            if let Some(normalized) = normalize_mt5_files_dir(raw) {
+                return Mt5FilesCandidatesResult {
+                    candidates: vec![candidate_info(&normalized)],
+                    selected_path: Some(normalized.to_string_lossy().to_string()),
+                    appdata_terminal_root,
+                };
+            }
+        }
+    }
+
+    let paths = collect_mt5_files_candidates();
+    let selected = select_best_mt5_files_dir(&paths);
+    Mt5FilesCandidatesResult {
+        candidates: paths.iter().map(|p| candidate_info(p)).collect(),
+        selected_path: selected.map(|p| p.to_string_lossy().to_string()),
+        appdata_terminal_root,
+    }
 }
 
 /// Resolve MT5 Files dir: user override (normalized) or auto-detect.

@@ -15,5 +15,7 @@ commands.allow = [
   "copy_ea_to_experts",
   "open_ea_in_metaeditor",
   "open_mt5_data_folder",
+  "list_mt5_files_candidates",
+  "detect_mt5_files_dir_cmd",
   "show_main_window",
 ]

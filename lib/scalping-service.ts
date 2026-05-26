@@ -61,6 +61,7 @@ export class ScalpingService {
   private static activeScalps: Map<string, ScalpingTrade> = new Map();
   private static scalpsToday: number = 0;
   private static lastScalpDate: string = '';
+  private static watchCloseListenerAttached = false;
 
   /**
    * Initialize scalping service
@@ -80,6 +81,30 @@ export class ScalpingService {
         } catch (e) {
           console.error('Failed to load scalping config:', e);
         }
+      }
+
+      if (!this.watchCloseListenerAttached) {
+        window.addEventListener('positionWatchClosed', (ev: Event) => {
+          const detail = (ev as CustomEvent).detail as {
+            watch?: { source?: string; ticket?: string | number; symbol?: string };
+            profit?: number;
+          };
+          if (detail?.watch?.source !== 'scalp' || (detail.profit ?? 0) <= 0) return;
+          const trade = Array.from(this.activeScalps.values()).find(
+            (t) =>
+              (detail.watch?.ticket != null &&
+                String(t.orderId) === String(detail.watch.ticket)) ||
+              t.symbol.replace(/\//g, '') === detail.watch?.symbol
+          );
+          if (!trade) return;
+          trade.status = 'profit_taken';
+          trade.profitAmount = detail.profit;
+          this.activeScalps.delete(trade.id);
+          setTimeout(() => {
+            void this.handleProfitTaken(trade);
+          }, this.config.reEntryDelay * 1000);
+        });
+        this.watchCloseListenerAttached = true;
       }
 
       // Load daily count
@@ -440,8 +465,18 @@ export class ScalpingService {
 
       logger.info(`✅ Scalping trade executed: ${symbol} ${direction} @ ${entryPrice}, TP: ${takeProfitPrice} (target: $${this.config.takeProfitAmount})`);
 
-      // Start monitoring this scalp
-      this.monitorScalp(scalpTrade);
+      const { registerPositionWatch } = await import('./register-position-watch');
+      registerPositionWatch({
+        symbol: scalpTrade.symbol,
+        direction: scalpTrade.direction,
+        entryPrice: scalpTrade.entryPrice,
+        stopLoss: scalpTrade.stopLoss,
+        takeProfit: scalpTrade.takeProfitPrice,
+        ticket: scalpTrade.orderId,
+        source: 'scalp',
+        profile: 'scalp',
+        takeProfitDollars: scalpTrade.takeProfitAmount,
+      });
 
       return { success: true, trade: scalpTrade };
     } catch (error: any) {

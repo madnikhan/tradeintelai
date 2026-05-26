@@ -8,6 +8,9 @@ import {
   canTradeByRole,
 } from '@/lib/firebase/mt5-accounts';
 import { accountManager } from '@/lib/account-manager';
+import { assertCanGoLive, type DemoReadinessResult } from '@/lib/demo-readiness';
+import type { Trade } from '@/types/trading';
+import { TRADING_RULES } from '@/config/trading-rules';
 
 export interface TradePermissionResult {
   allowed: boolean;
@@ -69,4 +72,36 @@ export async function assertCanTrade(accountLogin?: number | null): Promise<Trad
   }
 
   return { allowed: true, accountLogin: login };
+}
+
+export { assertCanGoLive, type DemoReadinessResult };
+
+/**
+ * Block switching to live until demo success criteria are met (unless override).
+ */
+export async function assertCanGoLiveMode(
+  trades: Trade[],
+  initialBalance: number,
+  currentBalance: number,
+  options?: { allowOverride?: boolean }
+): Promise<DemoReadinessResult> {
+  return assertCanGoLive(trades, initialBalance, currentBalance, options);
+}
+
+export function getDemoCriteriaSummary(): {
+  minWinRate: number;
+  maxDrawdown: number;
+  minProfitFactor: number;
+  minWeeks: number;
+  minClosedTrades: number;
+  minResolvedAnalyses: number;
+} {
+  return {
+    minWinRate: TRADING_RULES.MIN_WIN_RATE,
+    maxDrawdown: TRADING_RULES.MAX_DRAWDOWN,
+    minProfitFactor: TRADING_RULES.MIN_PROFIT_FACTOR,
+    minWeeks: TRADING_RULES.MIN_CONSECUTIVE_WEEKS,
+    minClosedTrades: TRADING_RULES.MIN_CLOSED_TRADES_FOR_LIVE,
+    minResolvedAnalyses: TRADING_RULES.MIN_RESOLVED_ANALYSES,
+  };
 }

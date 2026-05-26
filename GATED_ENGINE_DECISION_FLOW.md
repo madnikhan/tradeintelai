@@ -78,7 +78,9 @@
                                 │ Check ALL conditions:                       │
                                 │ ✅ Market readable                          │
                                 │ ✅ Bias ≠ NEUTRAL                           │
-                                │ ✅ Technical execution score ≥ 55           │
+                                │ ✅ Technical ≥ 50; if < 55 need GPT confirm │
+                                │    (pattern ≥85% CONFIRMS, OR structure     │
+                                │    confidence ≥75% CONFIRMS)                │
                                 │ ✅ GPT does NOT strongly contradict         │
                                 │ ✅ Volatility is tradable                   │
                                 │ ✅ Confidence ≥ 50                          │

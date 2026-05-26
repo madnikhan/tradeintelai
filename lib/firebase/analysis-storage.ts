@@ -205,7 +205,10 @@ export async function getAnalysisResults(
 /**
  * Get analysis accuracy statistics
  */
-export async function getAnalysisAccuracy(symbol?: string): Promise<{
+export async function getAnalysisAccuracy(
+  symbol?: string,
+  options?: { source?: string; days?: number }
+): Promise<{
   total: number;
   correct: number;
   incorrect: number;
@@ -231,8 +234,20 @@ export async function getAnalysisAccuracy(symbol?: string): Promise<{
     let incorrect = 0;
     let pending = 0;
     
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
+    const cutoff =
+      options?.days != null
+        ? Date.now() - options.days * 24 * 60 * 60 * 1000
+        : 0;
+
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (options?.source && data.marketData?.source !== options.source) {
+        return;
+      }
+      const ts = data.timestamp?.toDate?.() ?? new Date(data.timestamp);
+      if (cutoff > 0 && ts.getTime() < cutoff) {
+        return;
+      }
       if (data.outcome) {
         total++;
         if (data.outcome.accuracy === 'correct') correct++;

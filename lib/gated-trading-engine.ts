@@ -1857,12 +1857,25 @@ export class GatedTradingEngine {
       hasStrongGPTPattern &&
       maxPatternConfGate4 >= 85 &&
       gptStructure?.alignment === 'CONFIRMS';
+
+    // GPT structure confirms with high confidence — allow neutral technicals (>= 50)
+    const hasGptStructureConfirmation =
+      gptStructure &&
+      gptStructure.confidence >= 75 &&
+      gptStructure.alignment === 'CONFIRMS';
     
     // Only block if technical < 50 (truly neutral) OR if technical < 55 AND no compensating signals
-    if (technicalScore < 50 || (technicalScore < 55 && !hasStrongCompensatingSignal)) {
+    if (
+      technicalScore < 50 ||
+      (technicalScore < 55 && !hasStrongCompensatingSignal && !hasGptStructureConfirmation)
+    ) {
       if (hasStrongCompensatingSignal) {
         this.debugLog.push(
           `[GATE 4] Technical score ${technicalScore} < 55 but very strong confirming GPT pattern (${maxPatternConfGate4}%)`
+        );
+      } else if (hasGptStructureConfirmation) {
+        this.debugLog.push(
+          `[GATE 4] Technical score ${technicalScore} < 55 but GPT structure confirms (${gptStructure!.confidence}%)`
         );
       } else {
       blockedBy.push(`No technical confirmation (technical score: ${technicalScore} < 55)`);

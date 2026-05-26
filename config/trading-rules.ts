@@ -95,8 +95,45 @@ export const TRADING_RULES = {
   MIN_WIN_RATE: 0.60,        // 60% (up from 55%)
   MAX_DRAWDOWN: 0.12,        // 12% (up from 8%)
   MIN_PROFIT_FACTOR: 1.8,    // 1.8 (up from 1.5)
-  MIN_CONSECUTIVE_WEEKS: 4   // 4 weeks (up from 3)
+  MIN_CONSECUTIVE_WEEKS: 4,   // 4 weeks (up from 3)
+  MIN_CLOSED_TRADES_FOR_LIVE: 20,
+  MIN_RESOLVED_ANALYSES: 10,
+
+  // Position watch (browser-based, while dashboard open)
+  POSITION_WATCH_POLL_MS: 8000,
+  POSITION_WATCH_MAX_HOLD_MS: 8 * 60 * 60 * 1000, // 8h forex default
+  POSITION_WATCH_STALL_NEAR_TP_MS: 2 * 60 * 60 * 1000, // 2h
+  POSITION_WATCH_STALL_TP_FRACTION: 0.15, // within 15% of TP distance
+  POSITION_WATCH_GIVEBACK_FRACTION: 0.5, // exit if give back 50% of peak profit
+  POSITION_WATCH_LOSS_EXTENSION: 1.5, // vs planned risk distance
+  POSITION_WATCH_SIGNAL_RECHECK_MS: 30 * 60 * 1000, // re-analyze every 30m max
+  POSITION_WATCH_ASSIST_TP_CLOSE: false, // prefer broker TP; set true to close near TP
+  POSITION_WATCH_ASSIST_TP_PIPS: 3,
 } as const;
+
+export type PositionWatchConfig = {
+  enabled: boolean;
+  smartExitEnabled: boolean;
+  maxHoldMs: number;
+  stallNearTpMs: number;
+  stallTpFraction: number;
+  givebackFraction: number;
+  lossExtension: number;
+  signalRecheckEnabled: boolean;
+  assistTpClose: boolean;
+};
+
+export const DEFAULT_POSITION_WATCH_CONFIG: PositionWatchConfig = {
+  enabled: true,
+  smartExitEnabled: true,
+  maxHoldMs: TRADING_RULES.POSITION_WATCH_MAX_HOLD_MS,
+  stallNearTpMs: TRADING_RULES.POSITION_WATCH_STALL_NEAR_TP_MS,
+  stallTpFraction: TRADING_RULES.POSITION_WATCH_STALL_TP_FRACTION,
+  givebackFraction: TRADING_RULES.POSITION_WATCH_GIVEBACK_FRACTION,
+  lossExtension: TRADING_RULES.POSITION_WATCH_LOSS_EXTENSION,
+  signalRecheckEnabled: true,
+  assistTpClose: TRADING_RULES.POSITION_WATCH_ASSIST_TP_CLOSE,
+};
 
 // Helper to get pair without slash (for MT5)
 // Handles forex (EUR/USD -> EURUSD), metals (XAU/USD -> XAUUSD), and stocks (AAPL -> AAPL)

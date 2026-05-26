@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { MarketAnalysis } from '@/lib/ai-trading-engine';
-import { GatedEngineAdapter, ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
-import { httpBridge } from '@/lib/http-bridge-connector';
-import { TradingModeManager } from '@/lib/trading-mode';
+import { gatedEngineAdapter, ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
+import { executeGatedTrade } from '@/lib/execute-gated-trade';
 import { PriceChart } from '@/components/charts/PriceChart';
 import { AIExplanation } from '@/components/AIExplanation';
 import { ChartVisionAnalysis } from '@/components/ChartVisionAnalysis';
@@ -21,7 +20,12 @@ interface AITradingDashboardProps {
 }
 
 export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnalyzingChange }: AITradingDashboardProps) {
-  const { symbol: ctxSymbol, setSymbol: setCtxSymbol, setAiAnalysis: setCtxAnalysis } = useTradingContext();
+  const {
+    symbol: ctxSymbol,
+    setSymbol: setCtxSymbol,
+    aiAnalysis: ctxAnalysis,
+    setAiAnalysis: setCtxAnalysis,
+  } = useTradingContext();
   const [standaloneSymbol, setStandaloneSymbol] = useState('EURUSD');
   const selectedSymbol = embedded ? ctxSymbol : standaloneSymbol;
   const setSelectedSymbol = embedded ? setCtxSymbol : setStandaloneSymbol;
@@ -30,9 +34,18 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
   const [isExecuting, setIsExecuting] = useState(false);
   const [lastExecution, setLastExecution] = useState<any>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
-  
-  // Use gated engine adapter
-  const gatedEngineAdapter = new GatedEngineAdapter();
+  const [usingCachedScan, setUsingCachedScan] = useState(false);
+
+  // Hydrate from TradingContext when opening from Scan tab
+  useEffect(() => {
+    if (!embedded || !ctxAnalysis) return;
+    const ctxKey = ctxAnalysis.symbol?.replace(/\//g, '').toUpperCase();
+    const symKey = selectedSymbol.replace(/\//g, '').toUpperCase();
+    if (ctxKey === symKey) {
+      setAnalysis(ctxAnalysis);
+      setUsingCachedScan(true);
+    }
+  }, [embedded, ctxAnalysis, selectedSymbol]);
 
   const analyzeMarket = useCallback(async () => {
     setIsAnalyzing(true);
@@ -123,6 +136,7 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
       });
       
       setAnalysis(marketAnalysis);
+      setUsingCachedScan(false);
       setAnalysisError(null);
       if (embedded) {
         setCtxAnalysis(marketAnalysis);
@@ -190,98 +204,23 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
   //   analyzeMarket();
   // }, [analyzeMarket]);
 
+  const executionBlocked =
+    !analysis ||
+    analysis.recommendation === 'HOLD' ||
+    (analysis.gateStatus != null && !analysis.gateStatus.executionPermitted);
+
   const executeAITrade = async () => {
     if (!analysis) return;
-    
-    // GATED ENGINE VALIDATION: If using gated engine, trust gate decisions
-    if (analysis.gateStatus) {
-      // Gated engine has already validated through gates - trust its decision
-      if (!analysis.gateStatus.executionPermitted) {
-        setLastExecution({ 
-          success: false, 
-          error: `Execution blocked by gated engine. ${analysis.reasoning?.find(r => r.includes('Execution blocked')) || 'Gate conditions not met.'}` 
-        });
-        return;
-      }
-      
-      // Additional confidence check for gated engine (should already be >= 50 from gate)
-      if (analysis.confidence < 50) {
-        setLastExecution({ 
-          success: false, 
-          error: `Confidence too low. Confidence: ${analysis.confidence}% (minimum: 50%). The gated engine requires at least 50% confidence.` 
-        });
-        return;
-      }
-      
-      // Block HOLD recommendations
-      if (analysis.recommendation === 'HOLD') {
-        setLastExecution({ 
-          success: false, 
-          error: `AI recommends HOLD. Gate status: Execution blocked. Not a good time to trade this pair.` 
-        });
-        return;
-      }
-    } else {
-      // LEGACY VALIDATION: For old engine (backward compatibility)
-    const MIN_SCORE = 65; // Minimum overall score to execute (lowered from 70)
-    const MIN_CONFIDENCE = 55; // Minimum confidence percentage (lowered from 60)
-    
-    // Boundary check: score must be >= MIN_SCORE (e.g., 65.0 or higher)
-    if (analysis.overallScore < MIN_SCORE) {
-      setLastExecution({ 
-        success: false, 
-        error: `Signal too weak. Score: ${analysis.overallScore}/100 (minimum: ${MIN_SCORE}). Recommendation: ${analysis.recommendation}. Consider waiting for a stronger signal.` 
-      });
-      return;
-    }
-    
-    // Boundary check: confidence must be >= MIN_CONFIDENCE (e.g., 55.0% or higher)
-    if (analysis.confidence < MIN_CONFIDENCE) {
-      setLastExecution({ 
-        success: false, 
-        error: `Confidence too low. Confidence: ${analysis.confidence}% (minimum: ${MIN_CONFIDENCE}%). The AI is not confident enough in this trade.` 
-      });
-      return;
-    }
-    
-    // Block HOLD recommendations
-    if (analysis.recommendation === 'HOLD') {
-      setLastExecution({ 
-        success: false, 
-        error: `AI recommends HOLD. Score: ${analysis.overallScore}/100, Confidence: ${analysis.confidence}%. Not a good time to trade this pair.` 
-      });
-      return;
-      }
-    }
-    
-    if (!analysis.suggestedPositionSize || analysis.suggestedPositionSize <= 0) {
-      setLastExecution({ success: false, error: 'Invalid position size' });
-      return;
-    }
-    
-    if (!analysis.suggestedStopLoss || !analysis.suggestedTakeProfit) {
-      setLastExecution({ success: false, error: 'Invalid stop loss or take profit' });
-      return;
-    }
-    
     setIsExecuting(true);
     setLastExecution(null);
-    
     try {
-      const result = await httpBridge.executeTrade({
+      const result = await executeGatedTrade({
         symbol: selectedSymbol,
-        type: analysis.recommendation.includes('BUY') ? 'BUY' : 'SELL',
-        volume: Math.max(0.01, Math.min(analysis.suggestedPositionSize, 200)), // Cap at 200 lots maximum
-        stopLoss: analysis.suggestedStopLoss,
-        takeProfit: analysis.suggestedTakeProfit
+        analysis,
+        source: 'ai',
       });
-
+      if (result.cancelled) return;
       setLastExecution(result);
-    } catch (error) {
-      setLastExecution({
-        success: false,
-        error: error instanceof Error ? error.message : 'Trade execution failed'
-      });
     } finally {
       setIsExecuting(false);
     }
@@ -974,19 +913,34 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
             </div>
           )}
 
+          {usingCachedScan && (
+            <p className="text-xs text-cyan-400/80 mb-2 text-center">
+              Using analysis from Scan — Re-analyze for a fresh signal
+            </p>
+          )}
+
           {/* Execute Button */}
           <button
             onClick={executeAITrade}
-            disabled={isExecuting || analysis.recommendation === 'HOLD'}
+            disabled={isExecuting || executionBlocked}
+            title={
+              executionBlocked && analysis.gateStatus?.executionBlockedBy?.length
+                ? analysis.gateStatus.executionBlockedBy.join('; ')
+                : undefined
+            }
             className={`w-full py-4 sm:py-5 rounded-xl font-bold text-base sm:text-lg text-white transition-all touch-manipulation min-h-[56px] flex items-center justify-center ${
-              analysis.recommendation.includes('BUY') 
-                ? 'bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 hover:to-green-400 active:from-emerald-600 active:to-green-600 shadow-lg shadow-emerald-500/20' 
-                : analysis.recommendation.includes('SELL')
+              !executionBlocked && analysis.recommendation.includes('BUY')
+                ? 'bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 hover:to-green-400 active:from-emerald-600 active:to-green-600 shadow-lg shadow-emerald-500/20'
+                : !executionBlocked && analysis.recommendation.includes('SELL')
                 ? 'bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-400 hover:to-red-400 active:from-rose-600 active:to-red-600 shadow-lg shadow-rose-500/20'
                 : 'bg-gray-700 cursor-not-allowed text-gray-500'
             } disabled:bg-gray-700 disabled:cursor-not-allowed disabled:text-gray-500`}
           >
-            {isExecuting ? '↻ Executing...' : `Execute ${analysis.recommendation}`}
+            {isExecuting
+              ? '↻ Executing...'
+              : executionBlocked
+              ? 'EXECUTION BLOCKED — SEE GATE 4'
+              : `Execute ${analysis.recommendation}`}
           </button>
 
           {/* Execution Result */}

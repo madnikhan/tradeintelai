@@ -26,6 +26,7 @@ export function SignalCard({ analysis, symbol, isAnalyzing, onAnalyze }: SignalC
 
   const rec = analysis.recommendation || 'HOLD';
   const permitted = analysis.gateStatus?.executionPermitted ?? false;
+  const blockedBy = analysis.gateStatus?.executionBlockedBy ?? [];
   const isBuy = rec.includes('BUY');
   const isSell = rec.includes('SELL');
 
@@ -45,13 +46,20 @@ export function SignalCard({ analysis, symbol, isAnalyzing, onAnalyze }: SignalC
           </p>
           <p className="hint mt-2">
             {permitted
-              ? 'Trade allowed — all execution gates passed'
-              : 'Wait — execution blocked by safety gates'}
+              ? 'Execution allowed — all gates passed'
+              : 'Execution blocked — see Gate 4 below'}
           </p>
+          {!permitted && blockedBy.length > 0 && (
+            <ul className="mt-2 text-xs text-amber-400/90 space-y-1 list-disc list-inside max-w-lg">
+              {blockedBy.slice(0, 3).map((reason, i) => (
+                <li key={i}>{reason}</li>
+              ))}
+            </ul>
+          )}
         </div>
         <div className="flex flex-col gap-2 min-w-[140px]">
           <div className="flex justify-between text-sm">
-            <span className="text-secondary">Confidence</span>
+            <span className="text-secondary">{permitted ? 'Alignment' : 'Analysis alignment'}</span>
             <span className="value">{analysis.confidence ?? 0}%</span>
           </div>
           <div className="h-2 bg-[#1e2738] rounded-full overflow-hidden">
@@ -64,7 +72,7 @@ export function SignalCard({ analysis, symbol, isAnalyzing, onAnalyze }: SignalC
             <span
               className={`badge text-xs w-fit ${permitted ? 'badge-success' : 'badge-warning'}`}
             >
-              {permitted ? 'Execution OK' : 'No execution'}
+              {permitted ? 'Executable: Yes' : 'Executable: No'}
             </span>
           )}
         </div>

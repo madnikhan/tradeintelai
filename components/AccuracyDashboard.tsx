@@ -37,12 +37,18 @@ export function AccuracyDashboard({ trades = [], currentBalance, initialBalance 
 
   useEffect(() => {
     loadAccuracyData()
-  }, [timeRange])
+    const onClosed = () => loadAccuracyData()
+    window.addEventListener('positionWatchClosed', onClosed)
+    return () => window.removeEventListener('positionWatchClosed', onClosed)
+  }, [timeRange, trades.length])
 
   const loadAccuracyData = async () => {
     try {
       setLoading(true)
-      const stats = await getAnalysisAccuracy()
+      const stats = await getAnalysisAccuracy(undefined, {
+        source: 'gated-engine',
+        days: timeRange === '7d' ? 7 : timeRange === '90d' ? 90 : timeRange === 'all' ? 3650 : 30,
+      })
       setAccuracyStats(stats)
       
       // Calculate time series data from trades
@@ -145,9 +151,9 @@ export function AccuracyDashboard({ trades = [], currentBalance, initialBalance 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white">AI Engine Accuracy</h2>
+          <h2 className="text-2xl font-bold text-white">Gated Engine Accuracy</h2>
           <p className="text-sm text-gray-400 mt-1">
-            Track prediction accuracy and performance metrics over time
+            Resolved outcomes from gated-engine analyses with trades taken (actionTaken)
           </p>
         </div>
         <select

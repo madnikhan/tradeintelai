@@ -1,13 +1,19 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { aiTradingEngine } from '@/lib/ai-trading-engine';
+import { gatedEngineAdapter } from '@/lib/gated-engine-adapter';
+import { executeGatedTrade } from '@/lib/execute-gated-trade';
+import { useTradingContext } from '@/context/TradingContext';
 import { TRADING_RULES } from '@/config/trading-rules';
 import { TradingHoursFilter } from '@/lib/trading-hours';
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { Tooltip } from '@/components/Tooltip';
 // API keys are now managed server-side via environment variables
+
+interface OpportunityScannerProps {
+  onNavigateToTrade?: (symbol: string) => void;
+}
 
 interface Opportunity {
   symbol: string;
@@ -18,11 +24,20 @@ interface Opportunity {
   fundamentalScore: number;
   sentimentScore: number;
   riskLevel: string;
-  strength: number; // Combined strength score
+  strength: number;
+  executionPermitted: boolean;
+  executionBlockedBy: string[];
 }
 
-export function OpportunityScanner() {
+export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProps) {
+  const { setSymbol, setAiAnalysis } = useTradingContext();
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [quickExecuting, setQuickExecuting] = useState<string | null>(null);
+  const [quickExecuteMessage, setQuickExecuteMessage] = useState<{
+    symbol: string;
+    success: boolean;
+    text: string;
+  } | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [tradingHours, setTradingHours] = useState(TradingHoursFilter.analyze());
@@ -42,10 +57,56 @@ export function OpportunityScanner() {
   const [testingKeys, setTestingKeys] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; status?: number; error?: string }>>({});
 
-  // FIXED: Lowered thresholds to be more realistic based on audit findings
-  // The scoring system is conservative, so 65+ score with 55%+ confidence is still strong
-  const MIN_SCORE = 65;  // Lowered from 70
-  const MIN_CONFIDENCE = 55;  // Lowered from 60
+  // Executable opportunities: same gated engine as Trade tab (Gate 4 must pass)
+  const MIN_SCORE = 65;
+  const MIN_CONFIDENCE = 55;
+
+  const isExecutableOpportunity = (opp: Opportunity) =>
+    opp.executionPermitted &&
+    opp.recommendation !== 'HOLD' &&
+    opp.score >= MIN_SCORE &&
+    opp.confidence >= MIN_CONFIDENCE;
+
+  const openInTrade = (displaySymbol: string) => {
+    const sym = displaySymbol.replace('/', '');
+    const cached = gatedEngineAdapter.getCachedAnalysis(sym);
+    setSymbol(sym);
+    if (cached) setAiAnalysis(cached);
+    onNavigateToTrade?.(sym);
+  };
+
+  const quickExecute = async (displaySymbol: string) => {
+    const sym = displaySymbol.replace('/', '');
+    const cached = gatedEngineAdapter.getCachedAnalysis(sym);
+    if (!cached) {
+      setQuickExecuteMessage({
+        symbol: displaySymbol,
+        success: false,
+        text: 'No cached analysis — scan again first',
+      });
+      return;
+    }
+    if (
+      !window.confirm(
+        `Execute ${cached.recommendation} on ${displaySymbol}?\n\nSL: ${cached.suggestedStopLoss}\nTP: ${cached.suggestedTakeProfit}\nLots: ${cached.suggestedPositionSize}`
+      )
+    ) {
+      return;
+    }
+    setQuickExecuting(sym);
+    setQuickExecuteMessage(null);
+    const result = await executeGatedTrade({ symbol: sym, analysis: cached, source: 'ai' });
+    setQuickExecuting(null);
+    if (result.cancelled) return;
+    setQuickExecuteMessage({
+      symbol: displaySymbol,
+      success: result.success,
+      text: result.success
+        ? (result.message as string) || 'Trade executed'
+        : result.error || 'Execution failed',
+    });
+    setTimeout(() => setQuickExecuteMessage(null), 8000);
+  };
 
   // Preset pair groups
   const MAJOR_PAIRS = [
@@ -107,9 +168,10 @@ export function OpportunityScanner() {
       const pair = pairs[i];
       try {
         const symbol = pair.replace('/', ''); // Convert EUR/USD to EURUSD
-        const analysis = await aiTradingEngine.analyzeMarket(symbol, []);
+        const analysis = await gatedEngineAdapter.analyzeMarket(symbol, []);
         
         const strength = analysis.overallScore * (analysis.confidence / 100);
+        const executionPermitted = analysis.gateStatus?.executionPermitted ?? false;
         
         results.push({
           symbol: pair,
@@ -120,7 +182,9 @@ export function OpportunityScanner() {
           fundamentalScore: analysis.fundamentalScore,
           sentimentScore: analysis.sentimentScore,
           riskLevel: analysis.riskLevel,
-          strength: strength,
+          strength,
+          executionPermitted,
+          executionBlockedBy: analysis.gateStatus?.executionBlockedBy ?? [],
         });
         
         setScanProgress(Math.round(((i + 1) / total) * 100));
@@ -141,11 +205,7 @@ export function OpportunityScanner() {
     setTradingHours(TradingHoursFilter.analyze());
     
     // Check if we found strong signals and show notification
-    const strongSignals = results.filter(opp => 
-      opp.score >= MIN_SCORE && 
-      opp.confidence >= MIN_CONFIDENCE &&
-      opp.recommendation !== 'HOLD'
-    );
+    const strongSignals = results.filter(isExecutableOpportunity);
     
     if (typeof window !== 'undefined') {
       console.log('🔔 Notification check:', {
@@ -405,11 +465,7 @@ export function OpportunityScanner() {
     };
   }, [autoScanEnabled, selectedPairs]);
 
-  const validOpportunities = opportunities.filter(opp => 
-    opp.score >= MIN_SCORE && 
-    opp.confidence >= MIN_CONFIDENCE &&
-    opp.recommendation !== 'HOLD'
-  );
+  const validOpportunities = opportunities.filter(isExecutableOpportunity);
 
   const bestOpportunity = validOpportunities[0];
   
@@ -438,6 +494,8 @@ export function OpportunityScanner() {
             {lastScanTime && (
               <span className="block text-xs text-gray-500 mt-1">
                 Last scan: {lastScanTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                {' · '}
+                Uses same gated engine as Trade tab (Signal vs Executable)
               </span>
             )}
           </p>
@@ -734,10 +792,10 @@ export function OpportunityScanner() {
             <div>
               <h3 className="text-amber-400 font-bold mb-2">No Strong Signals Found</h3>
               <p className="text-sm text-gray-400 mb-2">
-                Scanner is running automatically. When strong signals (65+ score, 55%+ confidence) appear, you&apos;ll see them highlighted above.
+                Scanner uses the gated engine. Executable signals need Gate 4 pass (65+ score, 55%+ confidence, not HOLD).
               </p>
               <ul className="text-sm text-gray-400 space-y-1 list-disc list-inside">
-                <li>Only trade when you have a STRONG signal (65+ score, 55%+ confidence)</li>
+                <li>Only trade when Executable = Yes (Gate 4 passed — same rules as Trade tab)</li>
                 <li>Wait for the right setup - patience is key</li>
                 <li>Don&apos;t force trades - quality over quantity</li>
               </ul>
@@ -779,7 +837,7 @@ export function OpportunityScanner() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-xl font-bold text-white mb-1">🏆 Top Opportunity</h3>
-              <p className="text-sm text-gray-400">Strongest signal found</p>
+              <p className="text-sm text-gray-400">Strongest executable signal (Gate 4 passed)</p>
             </div>
             <div className={`px-4 py-2 rounded-lg font-bold text-lg ${
               bestOpportunity.recommendation.includes('BUY') 
@@ -824,6 +882,28 @@ export function OpportunityScanner() {
             </div>
           </div>
 
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button
+              type="button"
+              onClick={() => openInTrade(bestOpportunity.symbol)}
+              className="btn btn-secondary text-sm min-h-[40px]"
+            >
+              Open in Trade
+            </button>
+            {isExecutableOpportunity(bestOpportunity) && (
+              <button
+                type="button"
+                onClick={() => void quickExecute(bestOpportunity.symbol)}
+                disabled={quickExecuting === bestOpportunity.symbol.replace('/', '')}
+                className="btn btn-primary text-sm min-h-[40px]"
+              >
+                {quickExecuting === bestOpportunity.symbol.replace('/', '')
+                  ? 'Executing…'
+                  : `Quick execute ${bestOpportunity.recommendation}`}
+              </button>
+            )}
+          </div>
+
           <div className="mt-4 pt-4 border-t border-[#1e2738]">
             <p className="text-xs text-gray-500 mb-2">⚠️ Remember: This is the BEST opportunity, but still:</p>
             <ul className="text-xs text-gray-400 space-y-1">
@@ -836,11 +916,23 @@ export function OpportunityScanner() {
         </div>
       )}
 
+      {quickExecuteMessage && (
+        <div
+          className={`mb-4 p-3 rounded-lg text-sm ${
+            quickExecuteMessage.success
+              ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
+              : 'bg-rose-500/10 border border-rose-500/30 text-rose-300'
+          }`}
+        >
+          {quickExecuteMessage.symbol}: {quickExecuteMessage.text}
+        </div>
+      )}
+
       {/* All Opportunities Table */}
       {opportunities.length > 0 && (
         <div>
           <h3 className="text-lg font-bold text-white mb-4">
-            All Opportunities ({validOpportunities.length} strong, {opportunities.length - validOpportunities.length} weak)
+            All Opportunities ({validOpportunities.length} executable, {opportunities.length - validOpportunities.length} blocked or weak)
           </h3>
           
           <div className="overflow-x-auto">
@@ -849,15 +941,17 @@ export function OpportunityScanner() {
                 <tr className="border-b border-[#1e2738]">
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Pair</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Signal</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Executable</th>
                   <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Score</th>
                   <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Confidence</th>
                   <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Strength</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Risk</th>
+                  <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {opportunities.map((opp, index) => {
-                  const isValid = opp.score >= MIN_SCORE && opp.confidence >= MIN_CONFIDENCE && opp.recommendation !== 'HOLD';
+                  const isValid = isExecutableOpportunity(opp);
                   return (
                     <tr 
                       key={opp.symbol} 
@@ -880,6 +974,22 @@ export function OpportunityScanner() {
                             : 'bg-yellow-500/20 text-yellow-400'
                         }`}>
                           {opp.recommendation}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium ${
+                            opp.executionPermitted
+                              ? 'bg-emerald-500/20 text-emerald-400'
+                              : 'bg-amber-500/20 text-amber-400'
+                          }`}
+                          title={
+                            opp.executionBlockedBy.length > 0
+                              ? opp.executionBlockedBy.slice(0, 2).join('; ')
+                              : undefined
+                          }
+                        >
+                          {opp.executionPermitted ? 'Yes' : 'No'}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
@@ -907,6 +1017,27 @@ export function OpportunityScanner() {
                         }`}>
                           {opp.riskLevel}
                         </span>
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => openInTrade(opp.symbol)}
+                          className="text-xs text-cyan-400 hover:text-cyan-300 mr-2"
+                        >
+                          Trade tab
+                        </button>
+                        {isValid && (
+                          <button
+                            type="button"
+                            onClick={() => void quickExecute(opp.symbol)}
+                            disabled={quickExecuting === opp.symbol.replace('/', '')}
+                            className="text-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
+                          >
+                            {quickExecuting === opp.symbol.replace('/', '')
+                              ? '…'
+                              : 'Execute'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

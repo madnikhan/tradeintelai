@@ -28,6 +28,8 @@ export interface ExtendedMarketAnalysis extends MarketAnalysis {
       confidence: number;
     };
     executionPermitted: boolean;
+    executionReason?: string;
+    executionBlockedBy?: string[];
     expectancyData?: {
       estimatedWinRate: number;
       estimatedAvgWin: number;
@@ -39,11 +41,27 @@ export interface ExtendedMarketAnalysis extends MarketAnalysis {
   };
 }
 
+function normalizeSymbolKey(symbol: string): string {
+  return symbol.replace(/\//g, '').toUpperCase();
+}
+
 export class GatedEngineAdapter {
   private gatedEngine: GatedTradingEngine;
-  
+  private lastAnalysisIds = new Map<string, string>();
+  private lastAnalysisBySymbol = new Map<string, ExtendedMarketAnalysis>();
+
   constructor() {
     this.gatedEngine = new GatedTradingEngine();
+  }
+
+  /** Last Firestore analysis id per symbol (for outcome linking on trade close). */
+  getLastAnalysisId(symbol: string): string | undefined {
+    return this.lastAnalysisIds.get(normalizeSymbolKey(symbol));
+  }
+
+  /** Latest full analysis from scan or Trade tab (for handoff without re-analyze). */
+  getCachedAnalysis(symbol: string): ExtendedMarketAnalysis | undefined {
+    return this.lastAnalysisBySymbol.get(normalizeSymbolKey(symbol));
   }
   
   /**
@@ -59,6 +77,8 @@ export class GatedEngineAdapter {
     
     // Convert to old format with gate information
     const legacy = this.convertToLegacyFormat(gatedAnalysis);
+
+    this.lastAnalysisBySymbol.set(normalizeSymbolKey(symbol), legacy);
 
     // Persist for accuracy tracking (production gated path)
     this.persistAnalysis(symbol, legacy).catch((err) => {
@@ -76,10 +96,13 @@ export class GatedEngineAdapter {
     analysis: ExtendedMarketAnalysis
   ): Promise<void> {
     const { saveAnalysisToFirestore } = await import('./firebase/analysis-storage');
-    await saveAnalysisToFirestore(symbol, analysis, {
+    const analysisId = await saveAnalysisToFirestore(symbol, analysis, {
       gateStatus: analysis.gateStatus,
       source: 'gated-engine',
     });
+    if (analysisId) {
+      this.lastAnalysisIds.set(normalizeSymbolKey(symbol), analysisId);
+    }
   }
   
   /**
@@ -158,6 +181,8 @@ export class GatedEngineAdapter {
           confidence: gated.gptStructure.confidence,
         } : undefined,
         executionPermitted: gated.executionPermission.canExecute,
+        executionReason: gated.executionPermission.reason,
+        executionBlockedBy: gated.executionPermission.blockedBy,
         expectancyData: gated.expectancyData,
       },
     };
@@ -292,4 +317,6 @@ export class GatedEngineAdapter {
     return marketReadability.reason;
   }
 }
+
+export const gatedEngineAdapter = new GatedEngineAdapter();
 

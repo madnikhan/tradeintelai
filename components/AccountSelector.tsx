@@ -134,7 +134,13 @@ export function AccountSelector() {
           console.log(`🔍 AccountSelector: Auto-detected mode from server name: ${detectedMode} (server: ${accountInfo.server})`);
         }
         
-        TradingModeManager.setMode(detectedMode);
+        TradingModeManager.setMt5AccountKind(detectedMode);
+        TradingModeManager.applyDetectedModeFromMt5(detectedMode);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('tradingModeChanged', { detail: { mode: TradingModeManager.getCurrentMode() } })
+          );
+        }
         loadAccounts();
       }
     } catch (error) {

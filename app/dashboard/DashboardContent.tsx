@@ -33,6 +33,7 @@ import { logger } from '@/lib/logger'
 import { getBridgeUrl } from '@/config/bridge-config'
 import { AuthButton } from '@/components/AuthButton'
 import { BridgeSetupBanner } from '@/components/BridgeSetupBanner'
+import { DemoSuccessGoals } from '@/components/DemoSuccessGoals'
 
 const tabPanelFallback = () => <LoadingSkeleton type="card" />
 
@@ -172,6 +173,14 @@ export default function DashboardContent() {
     return () => clearInterval(interval)
   }, [])
 
+  // Restore manual demo/live override from localStorage
+  useEffect(() => {
+    const override = TradingModeManager.getModeOverride()
+    if (override) {
+      TradingModeManager.setMode(override)
+    }
+  }, [])
+
   // Fetch REAL account balance from MT5 and detect account type
   useEffect(() => {
     let attemptCount = 0
@@ -210,23 +219,25 @@ export default function DashboardContent() {
           // Auto-detect trading mode from MT5 account type
           let detectedMode: 'demo' | 'live' = 'live' // Default to live
           
+          let mt5Kind: 'demo' | 'live' | 'unknown' = 'unknown'
           if (accountInfo.account_type) {
             detectedMode = accountInfo.account_type === 'demo' ? 'demo' : 'live'
+            mt5Kind = detectedMode
             logger.debug(`🔍 Auto-detected trading mode from MT5 account_type: ${detectedMode}`)
           } else if (accountInfo.server) {
             const serverName = accountInfo.server.toLowerCase()
             if (serverName.includes('demo')) {
               detectedMode = 'demo'
+              mt5Kind = 'demo'
               logger.debug(`🔍 Auto-detected trading mode from server name: ${detectedMode} (server: ${accountInfo.server})`)
             } else {
               detectedMode = 'live'
+              mt5Kind = 'live'
               logger.debug(`🔍 Auto-detected trading mode from server name: ${detectedMode} (server: ${accountInfo.server})`)
             }
           }
-
-          if (TradingModeManager.getCurrentMode() !== detectedMode) {
-            TradingModeManager.setMode(detectedMode)
-          }
+          TradingModeManager.setMt5AccountKind(mt5Kind)
+          TradingModeManager.applyDetectedModeFromMt5(detectedMode)
           
           const realBalance = accountInfo.balance
           const realEquity = accountInfo.equity || accountInfo.balance
@@ -283,10 +294,12 @@ export default function DashboardContent() {
             console.error('❌ [Dashboard] Full response:', JSON.stringify(accountInfo, null, 2))
             logger.error('❌ Account info request failed. Check bridge logs for details.')
           }
+          TradingModeManager.setMt5AccountKind('unknown')
           // Don't set fake balance - keep at 0 until MT5 connects
           // Also don't set realBalance to null - keep previous value if it was set
         }
       } catch (error: any) {
+        TradingModeManager.setMt5AccountKind('unknown')
         logger.error('❌ Failed to fetch account balance from MT5:', {
           error: error.message,
           stack: error.stack,
@@ -885,6 +898,9 @@ export default function DashboardContent() {
           onMenuOpen={() => setSidebarOpen(true)}
           tradingHoursQuality={tradingHours.quality}
           currentSession={tradingHours.currentSession}
+          trades={trades}
+          initialBalance={getTradingConfig(TradingModeManager.getCurrentMode()).initialBalance}
+          currentBalance={account.balance}
         />
 
         <main ref={mainContentRef} className="flex-1 overflow-y-auto dashboard-main-pad">
@@ -912,7 +928,16 @@ export default function DashboardContent() {
         {activeTab === 'scan' && (
           <div className="max-w-7xl mx-auto">
             <div className="card animate-fade-in overflow-hidden">
-              <OpportunityScanner />
+              <OpportunityScanner
+                onNavigateToTrade={(symbol) => {
+                  setActiveTab('trade')
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(
+                      new CustomEvent('tradingSymbolChanged', { detail: { symbol } })
+                    )
+                  }
+                }}
+              />
             </div>
           </div>
         )}
@@ -984,29 +1009,13 @@ export default function DashboardContent() {
                 <div className="space-y-4 sm:space-y-6">
                   {/* Demo Success Requirements */}
                   {TradingModeManager.isDemoMode() && (
-                    <div className="card bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-amber-500/30 animate-fade-in">
-                      <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-amber-400">
-                        <span>🎯</span> Demo Success Goals
-                      </h3>
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400 text-sm">3 Profitable Weeks</span>
-                          <span className="font-bold text-white">0 / 3</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400 text-sm">Win Rate &gt; 55%</span>
-                          <span className="font-bold text-white">0%</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400 text-sm">Max Drawdown &lt; 8%</span>
-                          <span className="font-bold text-white">0%</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-400 text-sm">Profit Factor &gt; 1.5</span>
-                          <span className="font-bold text-white">0.00</span>
-                        </div>
-                      </div>
-                    </div>
+                    <DemoSuccessGoals
+                      trades={trades}
+                      initialBalance={
+                        getTradingConfig(TradingModeManager.getCurrentMode()).initialBalance
+                      }
+                      currentBalance={account.balance}
+                    />
                   )}
 
                   <div className="card animate-fade-in">

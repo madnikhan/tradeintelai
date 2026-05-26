@@ -210,7 +210,13 @@ export function SmartScoreCard({ analysis, symbol, compact = false }: SmartScore
     (aiScore * 0.1)
   );
 
-  const shouldTrade = tradeDecisionScore >= 65 && confidence >= 60 && !badge.text.includes('HOLD');
+  const executionPermitted = analysis.gateStatus?.executionPermitted ?? false;
+  const executionBlockedBy: string[] = analysis.gateStatus?.executionBlockedBy ?? [];
+  const shouldTrade =
+    executionPermitted &&
+    tradeDecisionScore >= 65 &&
+    confidence >= 60 &&
+    !badge.text.includes('HOLD');
 
   if (compact) {
     return (
@@ -230,8 +236,19 @@ export function SmartScoreCard({ analysis, symbol, compact = false }: SmartScore
           </div>
         </div>
         <p className="text-xs text-secondary">
-          {shouldTrade ? 'Scores support trading when gates permit.' : 'Scores suggest caution — check gate status above.'}
+          {shouldTrade
+            ? 'Scores support trading — Gate 4 passed.'
+            : !executionPermitted
+              ? 'Execution blocked by Gate 4 — alignment score does not mean you should trade.'
+              : 'Scores suggest caution — check gate status above.'}
         </p>
+        {!executionPermitted && executionBlockedBy.length > 0 && (
+          <ul className="text-xs text-amber-400/90 list-disc list-inside space-y-0.5">
+            {executionBlockedBy.slice(0, 2).map((r, i) => (
+              <li key={i}>{r}</li>
+            ))}
+          </ul>
+        )}
       </div>
     );
   }
@@ -265,8 +282,13 @@ export function SmartScoreCard({ analysis, symbol, compact = false }: SmartScore
               shouldTrade ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 
               'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
             }`}>
-              {shouldTrade ? '✓ Good to Trade' : '⏸ Wait for Better Setup'}
+              {shouldTrade ? '✓ Executable' : executionPermitted ? '⏸ Wait for Better Setup' : '⏸ Execution blocked'}
             </div>
+            {!executionPermitted && executionBlockedBy.length > 0 && (
+              <p className="mt-3 text-xs text-amber-400/90 text-center max-w-xs">
+                {executionBlockedBy[0]}
+              </p>
+            )}
           </div>
 
           {/* Center - Score Breakdown */}
@@ -275,7 +297,7 @@ export function SmartScoreCard({ analysis, symbol, compact = false }: SmartScore
             <ScoreBar label="Technical" score={technicalScore} icon="📈" />
             <ScoreBar label="Fundamental" score={fundamentalScore} icon="📰" />
             <ScoreBar label="Sentiment" score={sentimentScore} icon="💭" />
-            <ScoreBar label="AI Confidence" score={confidence} icon="🤖" />
+            <ScoreBar label={executionPermitted ? 'Alignment' : 'Analysis alignment'} score={confidence} icon="🤖" />
             <ScoreBar label="Timing" score={timingScore} icon="⏰" />
             <ScoreBar label="Risk Profile" score={riskScore} icon="🛡️" />
           </div>

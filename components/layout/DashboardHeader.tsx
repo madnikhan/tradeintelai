@@ -6,17 +6,24 @@ import { SymbolPicker } from '@/components/trading/SymbolPicker';
 import { useTradingContext } from '@/context/TradingContext';
 import { TradingModeSwitch } from '@/components/TradingModeSwitch';
 import { SystemStatus } from '@/components/SystemStatus';
+import type { Trade } from '@/types/trading';
 
 interface DashboardHeaderProps {
   onMenuOpen: () => void;
   tradingHoursQuality?: string;
   currentSession?: string;
+  trades?: Trade[];
+  initialBalance?: number;
+  currentBalance?: number;
 }
 
 export function DashboardHeader({
   onMenuOpen,
   tradingHoursQuality,
   currentSession,
+  trades,
+  initialBalance,
+  currentBalance,
 }: DashboardHeaderProps) {
   const { symbol, setSymbol } = useTradingContext();
 
@@ -76,7 +83,11 @@ export function DashboardHeader({
             </div>
             <AuthButton />
             <div className="hidden md:block">
-              <TradingModeSwitch />
+              <TradingModeSwitch
+                trades={trades}
+                initialBalance={initialBalance}
+                currentBalance={currentBalance}
+              />
             </div>
           </div>
         </div>

@@ -214,17 +214,23 @@ export class RiskCalculator {
     
     // Get pip size for the pair (0.0001 for most pairs, 0.01 for JPY pairs)
     const pipSize = this.getPipSize(pair);
-    const pipDistance = priceDifference / pipSize; // Convert to pips
+    const pipDistance = priceDifference / pipSize;
+
+    const MIN_PIP_DISTANCE = 5;
+    if (pipDistance < MIN_PIP_DISTANCE) {
+      return {
+        riskAmount: 0,
+        rewardAmount: 0,
+        lotSize: 0,
+        positionSize: 0,
+        isValid: false,
+        message: `Stop loss too close (${pipDistance.toFixed(1)} pips). Use at least ${MIN_PIP_DISTANCE} pips from entry.`,
+      };
+    }
     
-    // Get pip value per standard lot
     const pipValuePerLot = this.getPipValue(pair, entryPrice);
-    
-    // Calculate lot size: risk = lot size * pip distance * pip value per lot
-    // Therefore: lot size = risk / (pip distance * pip value per lot)
     const lotSize = riskAmount / (pipDistance * pipValuePerLot);
     
-    // CRITICAL FIX: Add proper maximum position size caps
-    // Maximum position size should be limited to 2% of account equity in margin
     const marginPerLot = (100000 * entryPrice) / 500; // Assuming 500:1 leverage (conservative)
     const maxLotsByMargin = (balance * 0.02) / marginPerLot; // Max 2% of equity in margin
     
@@ -331,9 +337,22 @@ export class RiskCalculator {
     // Proper lot size calculation for Forex
     const pipSize = this.getPipSize(pair);
     const pipDistance = priceDifference / pipSize;
+
+    const MIN_PIP_DISTANCE = 5;
+    if (pipDistance < MIN_PIP_DISTANCE) {
+      return {
+        riskAmount: 0,
+        rewardAmount: 0,
+        lotSize: 0,
+        positionSize: 0,
+        isValid: false,
+        message: `Stop loss too close (${pipDistance.toFixed(1)} pips). Use at least ${MIN_PIP_DISTANCE} pips from entry.`,
+      };
+    }
+
     const pipValuePerLot = this.getPipValue(pair, entryPrice);
     const lotSize = riskAmount / (pipDistance * pipValuePerLot);
-    
+
     // CRITICAL FIX: Add proper maximum position size caps (same as async version)
     const marginPerLot = (100000 * entryPrice) / 500; // Assuming 500:1 leverage
     const maxLotsByMargin = (balance * 0.02) / marginPerLot; // Max 2% of equity in margin

@@ -7,9 +7,11 @@ import { RiskCalculator } from '@/lib/risk-calculator';
 import { TRADING_RULES } from '@/config/trading-rules';
 import { httpBridge } from '@/lib/http-bridge-connector';
 import { MarketAnalysis } from '@/lib/ai-trading-engine';
+import type { ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
 import { MultiAccountExecutor } from '@/lib/multi-account-executor';
 import { accountManager } from '@/lib/account-manager';
 import { assertCanTrade } from '@/lib/trade-permissions';
+import { registerPositionWatch } from '@/lib/register-position-watch';
 import { useRealtimePrice } from '@/lib/use-realtime-price';
 import { useTradingContext } from '@/context/TradingContext';
 import { ConfirmTradeModal } from '@/components/trading/ConfirmTradeModal';
@@ -65,6 +67,13 @@ export function TradePanel({ aiAnalysis: aiAnalysisProp, embedded = false }: Tra
     ? aiAnalysis.recommendation 
     : null;
   const isAiHold = aiRecommendation === 'HOLD';
+  const extendedAnalysis =
+    aiAnalysis && symbolMatches(aiAnalysis.symbol)
+      ? (aiAnalysis as ExtendedMarketAnalysis)
+      : null;
+  const executionPermitted = extendedAnalysis?.gateStatus?.executionPermitted ?? true;
+  const executionBlocked = isAiHold || !executionPermitted;
+  const executionBlockedBy = extendedAnalysis?.gateStatus?.executionBlockedBy ?? [];
   const aiConfidence = aiAnalysis && symbolMatches(aiAnalysis.symbol)
     ? aiAnalysis.confidence 
     : null;
@@ -193,6 +202,18 @@ export function TradePanel({ aiAnalysis: aiAnalysisProp, embedded = false }: Tra
               message: result.message,
             },
           }));
+          if (result.success) {
+            registerPositionWatch({
+              symbol: selectedPair,
+              direction,
+              entryPrice: entry,
+              stopLoss: stop,
+              takeProfit,
+              ticket: result.orderId,
+              source: 'manual',
+              recommendation: aiAnalysis?.recommendation,
+            });
+          }
         });
       } else {
         const permission = await assertCanTrade();
@@ -224,6 +245,18 @@ export function TradePanel({ aiAnalysis: aiAnalysisProp, embedded = false }: Tra
             message: result.message,
           },
         }));
+        if (result.success) {
+          registerPositionWatch({
+            symbol: selectedPair,
+            direction,
+            entryPrice: entry,
+            stopLoss: stop,
+            takeProfit,
+            ticket: result.order_id || result.orderId,
+            source: 'manual',
+            recommendation: aiAnalysis?.recommendation,
+          });
+        }
       }
     } catch (error) {
       setLastTradeResult({ success: false, error: 'Trade execution failed' });
@@ -493,13 +526,22 @@ export function TradePanel({ aiAnalysis: aiAnalysisProp, embedded = false }: Tra
           </div>
         </div>
         
-        <div className={`mt-3 p-2 rounded-lg text-sm ${
-          tradeCalculation.isValid 
-            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' 
-            : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
-        }`}>
-          {tradeCalculation.isValid ? '✓ ' : '✕ '}{tradeCalculation.message}
-        </div>
+        {executionBlocked ? (
+          <div className="mt-3 p-2 rounded-lg text-sm bg-amber-500/10 text-amber-300 border border-amber-500/30">
+            Execution blocked by Gate 4 — same rules as analysis above.
+            {executionBlockedBy.length > 0 && (
+              <span className="block mt-1 text-xs">{executionBlockedBy[0]}</span>
+            )}
+          </div>
+        ) : (
+          <div className={`mt-3 p-2 rounded-lg text-sm ${
+            tradeCalculation.isValid 
+              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' 
+              : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
+          }`}>
+            {tradeCalculation.isValid ? '✓ ' : '✕ '}{tradeCalculation.message}
+          </div>
+        )}
       </div>
 
       {/* Last Trade Result */}
@@ -582,9 +624,9 @@ export function TradePanel({ aiAnalysis: aiAnalysisProp, embedded = false }: Tra
       {/* Execute Button */}
       <button
         onClick={executeTrade}
-        disabled={!tradeCalculation.isValid || isExecuting}
+        disabled={executionBlocked ? true : !tradeCalculation.isValid || isExecuting}
         className={`w-full py-4 rounded-xl font-bold text-white transition-all ${
-          tradeCalculation.isValid && !isExecuting
+          !executionBlocked && tradeCalculation.isValid && !isExecuting
             ? isAiHold
               ? 'bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 shadow-lg shadow-yellow-500/20'
               : direction === 'BUY' 
@@ -595,7 +637,9 @@ export function TradePanel({ aiAnalysis: aiAnalysisProp, embedded = false }: Tra
       >
         {isExecuting 
           ? '↻ EXECUTING...' 
-          : tradeCalculation.isValid 
+          : executionBlocked
+            ? 'EXECUTION BLOCKED — SEE GATE 4'
+            : tradeCalculation.isValid 
             ? isAiHold
               ? `⚠️ EXECUTE ${direction} (AI: HOLD)${tradingAccounts.length > 1 ? ` on ${tradingAccounts.length} accounts` : ''}`
               : `EXECUTE ${direction}${tradingAccounts.length > 1 ? ` on ${tradingAccounts.length} accounts` : ''}` 

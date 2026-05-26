@@ -18,7 +18,9 @@
     "build:bridge-desktop": "cd bridge-desktop && npm run prepare:resources && npm run build:desktop",
     "vercel:env-sync": "node scripts/sync-env-to-vercel.cjs",
     "cloudflare": "./start-cloudflare.sh",
-    "cloudflare:stop": "./stop-cloudflare.sh"
+    "cloudflare:stop": "./stop-cloudflare.sh",
+    "validate:production": "npm test && npx tsx scripts/compare-scan-trade-engines.ts EURUSD && npx tsx scripts/run-backtest-report.ts --offline",
+    "backtest:report": "npx tsx scripts/run-backtest-report.ts"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.0",

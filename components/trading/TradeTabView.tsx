@@ -6,6 +6,7 @@ import { AITradingDashboard } from '@/components/AITradingDashboard';
 import { TradePanel } from '@/components/TradePanel';
 import { SmartScoreCard } from '@/components/SmartScoreCard';
 import { RiskMonitor } from '@/components/RiskMonitor';
+import { PositionWatchPanel } from '@/components/PositionWatchPanel';
 import { useTradingContext } from '@/context/TradingContext';
 import { AccordionItem } from '@/components/ui/Accordion';
 import type { Account } from '@/types/trading';
@@ -52,6 +53,7 @@ export function TradeTabView({ account }: TradeTabViewProps) {
           <div className="card animate-fade-in overflow-hidden">
             <TradePanel embedded />
           </div>
+          <PositionWatchPanel />
           <div className="card animate-fade-in overflow-hidden">
             <RiskMonitor
               dailyProfitLoss={account.dailyProfitLoss}

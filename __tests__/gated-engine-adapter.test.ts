@@ -90,4 +90,15 @@ describe('GatedEngineAdapter', () => {
     expect(legacy.gateStatus?.executionPermitted).toBe(false);
     expect(legacy.recommendation).toBe('HOLD');
   });
+
+  it('shows HOLD not BUY when bullish bias but Gate 4 blocks', () => {
+    const gated = baseGated();
+    gated.directionalBias.direction = 'BULLISH';
+    gated.directionalBias.strength = 70;
+    gated.executionPermission.canExecute = false;
+    gated.recommendation = 'HOLD';
+    const legacy = (adapter as any).convertToLegacyFormat(gated);
+    expect(legacy.recommendation).toBe('HOLD');
+    expect(legacy.gateStatus?.executionPermitted).toBe(false);
+  });
 });

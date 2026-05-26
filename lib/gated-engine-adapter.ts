@@ -124,14 +124,19 @@ export class GatedEngineAdapter {
     // This is just for UI compatibility - decisions are made by gates
     const displayScore = this.calculateDisplayScore(gated);
     
-    // Determine recommendation
+    // Display recommendation must match Gate 4 (no BUY label when execution blocked)
     let recommendation: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL';
-    if (gated.recommendation === 'HOLD') {
+    if (
+      !gated.executionPermission.canExecute ||
+      gated.recommendation === 'HOLD'
+    ) {
       recommendation = 'HOLD';
     } else if (gated.directionalBias.direction === 'BULLISH') {
       recommendation = gated.directionalBias.strength > 60 ? 'STRONG_BUY' : 'BUY';
-    } else {
+    } else if (gated.directionalBias.direction === 'BEARISH') {
       recommendation = gated.directionalBias.strength > 60 ? 'STRONG_SELL' : 'SELL';
+    } else {
+      recommendation = 'HOLD';
     }
     
     // Convert GPT structure to old format (if exists)

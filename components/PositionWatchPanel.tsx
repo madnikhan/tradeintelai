@@ -5,9 +5,11 @@ import {
   PositionWatchService,
   type WatchedPosition,
   type PositionWatchEvent,
-  type PositionWatchConfig,
 } from '@/lib/position-watch-service';
-import { DEFAULT_POSITION_WATCH_CONFIG } from '@/config/trading-rules';
+import {
+  DEFAULT_POSITION_WATCH_CONFIG,
+  type PositionWatchConfig,
+} from '@/config/trading-rules';
 
 export function PositionWatchPanel() {
   const [watches, setWatches] = useState<WatchedPosition[]>([]);

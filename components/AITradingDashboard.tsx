@@ -47,62 +47,54 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
     }
   }, [embedded, ctxAnalysis, selectedSymbol]);
 
-  const analyzeMarket = useCallback(async () => {
+  const analyzeMarket = useCallback(async (includeChart = false) => {
     setIsAnalyzing(true);
     onAnalyzingChange?.(true);
     setAnalysisError(null);
+    setUsingCachedScan(false);
     try {
-      console.log(`🔍 Starting analysis for ${selectedSymbol}...`);
-      
-      // Capture chart image for vision analysis (if available)
-      // 🔒 FIX: Wait for chart to be rendered and retry if not found
+      console.log(`🔍 Starting analysis for ${selectedSymbol} (chart: ${includeChart})...`);
+
+      // Default: same inputs as Opportunity Scanner (no chart) for consistent Gate 4
       let chartImageBase64: string | undefined;
-      try {
-        const chartContainerId = `chart-container-${selectedSymbol}-1h`;
-        
-        // Retry logic: wait for chart container to appear (max 5 seconds)
-        let container: HTMLElement | null = null;
-        let chartElement: HTMLElement | null = null;
-        const maxRetries = 10;
-        const retryDelay = 500; // 500ms between retries
-        
-        for (let i = 0; i < maxRetries; i++) {
-          container = document.getElementById(chartContainerId);
-          if (container) {
-            chartElement = container.querySelector('.recharts-wrapper') as HTMLElement;
-            if (chartElement && chartElement.clientWidth > 0 && chartElement.clientHeight > 0) {
-              console.log(`✅ Chart container found on attempt ${i + 1}`);
-              break;
+      if (includeChart) {
+        try {
+          const chartContainerId = `chart-container-${selectedSymbol}-1h`;
+          let container: HTMLElement | null = null;
+          let chartElement: HTMLElement | null = null;
+          const maxRetries = 10;
+          const retryDelay = 500;
+
+          for (let i = 0; i < maxRetries; i++) {
+            container = document.getElementById(chartContainerId);
+            if (container) {
+              chartElement = container.querySelector('.recharts-wrapper') as HTMLElement;
+              if (chartElement && chartElement.clientWidth > 0 && chartElement.clientHeight > 0) {
+                break;
+              }
+            }
+            if (i < maxRetries - 1) {
+              await new Promise((resolve) => setTimeout(resolve, retryDelay));
             }
           }
-          if (i < maxRetries - 1) {
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
+
+          if (container && chartElement && chartElement.clientWidth > 0 && chartElement.clientHeight > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            const { captureRechartsChart } = await import('@/lib/chart-capture');
+            chartImageBase64 = (await captureRechartsChart(chartContainerId)) || undefined;
           }
+        } catch (chartError) {
+          console.error('Chart capture error:', chartError);
         }
-        
-        if (container && chartElement && chartElement.clientWidth > 0 && chartElement.clientHeight > 0) {
-          // Wait a bit more for chart to be fully rendered
-          await new Promise(resolve => setTimeout(resolve, 500));
-          const { captureRechartsChart } = await import('@/lib/chart-capture');
-          const capturedImage = await captureRechartsChart(chartContainerId);
-          if (capturedImage) {
-            chartImageBase64 = capturedImage;
-            console.log(`✅ Chart image captured for AI analysis (${capturedImage.length} chars)`);
-          } else {
-            console.warn('⚠️ Chart capture returned null/undefined');
-          }
-        } else {
-          console.warn(`⚠️ Chart container/element not found after ${maxRetries} attempts: container=${!!container}, chartElement=${!!chartElement}, width=${chartElement?.clientWidth || 0}, height=${chartElement?.clientHeight || 0}`);
-        }
-      } catch (chartError) {
-        console.error('❌ Chart capture error:', chartError);
-        // Continue without chart image - will use text-based analysis
       }
 
-      // Analyze with chart image (if available) using gated engine
       console.log(`📊 Analyzing ${selectedSymbol} with Gated Trading Engine...`);
       console.log(`📊 Chart image provided: ${chartImageBase64 ? `YES (${chartImageBase64.length} chars)` : 'NO'}`);
-      const marketAnalysis = await gatedEngineAdapter.analyzeMarket(selectedSymbol, [], chartImageBase64);
+      const marketAnalysis = await gatedEngineAdapter.analyzeMarket(
+        selectedSymbol,
+        [],
+        chartImageBase64
+      );
       
       // 🔒 DEBUG: Log GPT structure from analysis
       if (marketAnalysis.gptChartAnalysis) {
@@ -236,14 +228,28 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
     if (embedded) {
       return (
         <div className="p-4">
-          <p className="text-secondary text-sm mb-4">Run AI analysis for {toCompactSymbol(selectedSymbol)} using the gated engine.</p>
-          <button
-            type="button"
-            onClick={analyzeMarket}
-            className="btn btn-primary min-h-[44px] w-full sm:w-auto"
-          >
-            Analyze market
-          </button>
+          <p className="text-secondary text-sm mb-4">
+            Run AI analysis for {toCompactSymbol(selectedSymbol)} (same engine as Scan — no chart by default).
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void analyzeMarket(false)}
+              disabled={isAnalyzing}
+              className="btn btn-primary min-h-[44px]"
+            >
+              {isAnalyzing ? 'Analyzing…' : 'Analyze market'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void analyzeMarket(true)}
+              disabled={isAnalyzing}
+              className="btn btn-secondary min-h-[44px] text-sm"
+              title="Optional chart vision — may differ from Scan results"
+            >
+              Analyze with chart
+            </button>
+          </div>
         </div>
       );
     }
@@ -326,7 +332,7 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
           
           {/* Start Analysis Button */}
           <button
-            onClick={analyzeMarket}
+            onClick={() => void analyzeMarket(false)}
             className="px-8 py-3 sm:py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-xl font-bold text-white hover:from-cyan-400 hover:to-blue-500 transition-all shadow-lg shadow-cyan-500/20 text-base sm:text-lg min-h-[48px] sm:min-h-[52px]"
           >
             Start AI Analysis
@@ -342,7 +348,7 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
         <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b border-[#1e2738]">
           <button
             type="button"
-            onClick={analyzeMarket}
+            onClick={() => void analyzeMarket(false)}
             disabled={isAnalyzing}
             className="btn btn-primary min-h-[44px] flex-1 sm:flex-none"
           >
@@ -424,7 +430,7 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
             </optgroup>
           </select>
           <button
-            onClick={analyzeMarket}
+            onClick={() => void analyzeMarket(false)}
             disabled={isAnalyzing}
             className="px-4 py-2 bg-[#141c2b] border border-[#1e2738] rounded-lg text-cyan-400 hover:bg-[#1e2738] transition-all font-medium disabled:opacity-50"
           >

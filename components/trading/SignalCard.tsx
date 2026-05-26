@@ -27,8 +27,18 @@ export function SignalCard({ analysis, symbol, isAnalyzing, onAnalyze }: SignalC
   const rec = analysis.recommendation || 'HOLD';
   const permitted = analysis.gateStatus?.executionPermitted ?? false;
   const blockedBy = analysis.gateStatus?.executionBlockedBy ?? [];
-  const isBuy = rec.includes('BUY');
-  const isSell = rec.includes('SELL');
+  const bias = analysis.gateStatus?.directionalBias;
+  const biasNote =
+    !permitted && bias === 'BULLISH'
+      ? 'Bullish bias — not executable yet (Gate 4 blocked)'
+      : !permitted && bias === 'BEARISH'
+      ? 'Bearish bias — not executable yet (Gate 4 blocked)'
+      : null;
+
+  const displayLabel = permitted ? rec : 'HOLD';
+  const displaySub = !permitted ? '(execution blocked)' : null;
+  const isBuy = permitted && rec.includes('BUY');
+  const isSell = permitted && rec.includes('SELL');
 
   const borderClass = isBuy
     ? 'border-emerald-500/40 bg-emerald-500/5'
@@ -42,13 +52,21 @@ export function SignalCard({ analysis, symbol, isAnalyzing, onAnalyze }: SignalC
         <div>
           <p className="label mb-1">Signal · {symbol}</p>
           <p className={`text-3xl sm:text-4xl font-bold ${isBuy ? 'text-emerald-400' : isSell ? 'text-rose-400' : 'text-yellow-400'}`}>
-            {rec}
+            {displayLabel}
+            {displaySub && (
+              <span className="block text-base sm:text-lg font-medium text-amber-400/90 mt-1">
+                {displaySub}
+              </span>
+            )}
           </p>
           <p className="hint mt-2">
             {permitted
               ? 'Execution allowed — all gates passed'
-              : 'Execution blocked — see Gate 4 below'}
+              : 'Wait — execution blocked by safety gates (Gate 4)'}
           </p>
+          {biasNote && (
+            <p className="text-xs text-gray-400 mt-1">{biasNote}</p>
+          )}
           {!permitted && blockedBy.length > 0 && (
             <ul className="mt-2 text-xs text-amber-400/90 space-y-1 list-disc list-inside max-w-lg">
               {blockedBy.slice(0, 3).map((reason, i) => (

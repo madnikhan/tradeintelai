@@ -34,20 +34,20 @@ def normalize_mt5_files_dir(path: str) -> Optional[str]:
 
     path_str = str(p).lower().replace("\\", "/")
     if path_str.endswith("mql5/files"):
-        return str(p)
+        (p).mkdir(parents=True, exist_ok=True)
+        return str(p) if p.is_dir() else None
 
-    if "metaquotes" in path_str and "terminal" in path_str:
-        with_mql5 = p / "MQL5" / "Files"
+    with_mql5 = p / "MQL5" / "Files"
+
+    if "metaquotes" in path_str and "terminal" in path_str and p.is_dir():
+        with_mql5.mkdir(parents=True, exist_ok=True)
         if with_mql5.is_dir():
             return str(with_mql5)
 
-    if "metatrader" in path_str and "mql5" not in path_str:
-        with_mql5 = p / "MQL5" / "Files"
+    if ("metatrader" in path_str or "mt5" in path_str) and p.is_dir():
+        with_mql5.mkdir(parents=True, exist_ok=True)
         if with_mql5.is_dir():
             return str(with_mql5)
-
-    if p.is_dir():
-        return str(p)
 
     return None
 
@@ -115,9 +115,12 @@ def _terminal_hashes_files_dirs(terminal_root: Path) -> List[str]:
         return out
     try:
         for entry in terminal_root.iterdir():
-            if entry.is_dir():
-                files = entry / "MQL5" / "Files"
-                _push_if_exists(out, files)
+            if not entry.is_dir():
+                continue
+            files = entry / "MQL5" / "Files"
+            if not files.is_dir():
+                files.mkdir(parents=True, exist_ok=True)
+            _push_if_exists(out, files)
     except OSError:
         pass
     return out

@@ -132,6 +132,11 @@ impl BridgeManager {
                     "Invalid MT5 Files path (looks like a URL or placeholder). Use File → Open Data Folder → MQL5 → Files."
                         .to_string(),
                 );
+            } else {
+                return Err(
+                    "MT5 Files path must be the MQL5\\Files folder (or Terminal hash / MT5 install folder so we can append MQL5\\Files)."
+                        .to_string(),
+                );
             }
         }
         if config.mt5_files_dir.is_none() {
@@ -179,6 +184,7 @@ impl BridgeManager {
             }
             append_bridge_log(&format!("MT5_FILES_DIR={path_str}"));
         } else {
+            paths::log_mt5_detection_failure(config.mt5_files_dir.as_deref(), append_bridge_log);
             let msg = paths::MT5_FILES_NOT_FOUND_HELP.to_string();
             let mut status = self.inner.status.lock();
             status.state = BridgeState::Error;
@@ -244,6 +250,22 @@ impl BridgeManager {
         self.ensure_polling();
 
         Ok(())
+    }
+
+    /// Autostart only when MT5 Files path resolves — avoids Error state on first Windows launch.
+    pub fn try_autostart(&self) {
+        let config = self.get_config();
+        if !config.autostart_bridge {
+            return;
+        }
+        if paths::resolve_mt5_files_dir(config.mt5_files_dir.as_deref()).is_some() {
+            let _ = self.start();
+        } else {
+            let mut status = self.inner.status.lock();
+            status.state = BridgeState::Stopped;
+            status.message = "Setup required: open MT5 once, then Detect MT5 folder or paste path in Advanced → Save."
+                .to_string();
+        }
     }
 
     pub fn stop(&self) {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import { invoke, isTauri, listen } from './lib/tauri';
 
 type BridgeState =
@@ -71,6 +72,7 @@ interface Mt5FilesCandidateInfo {
 interface Mt5FilesCandidatesResult {
   candidates: Mt5FilesCandidateInfo[];
   selected_path: string | null;
+  saved_override: string | null;
   appdata_terminal_root: string | null;
 }
 
@@ -119,6 +121,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [lastEaPath, setLastEaPath] = useState<string | null>(null);
   const [mt5Candidates, setMt5Candidates] = useState<Mt5FilesCandidatesResult | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!inDesktop) return;
@@ -136,6 +139,12 @@ export default function App() {
       setMt5Path(c.mt5_files_dir ?? s.mt5_files_dir ?? '');
     } catch (e) {
       setMessage(String(e));
+    }
+  }, [inDesktop]);
+
+  useEffect(() => {
+    if (inDesktop) {
+      getVersion().then(setAppVersion).catch(() => {});
     }
   }, [inDesktop]);
 
@@ -529,12 +538,21 @@ export default function App() {
             ) : null}
           </p>
         ) : null}
+        {mt5Candidates?.saved_override ? (
+          <p className="muted small">
+            Saved path: <code>{mt5Candidates.saved_override}</code>
+          </p>
+        ) : null}
         {mt5Candidates && mt5Candidates.candidates.length > 0 ? (
           <ul className="candidate-list">
             {mt5Candidates.candidates.map((c) => (
               <li key={c.path} className={c.path === mt5Candidates.selected_path ? 'selected' : ''}>
                 <code>{c.path}</code>
-                {c.path === mt5Candidates.selected_path ? ' (auto)' : ''}
+                {c.path === mt5Candidates.selected_path
+                  ? c.path === mt5Candidates.saved_override
+                    ? ' (saved)'
+                    : ' (auto)'
+                  : ''}
               </li>
             ))}
           </ul>
@@ -579,6 +597,9 @@ export default function App() {
       </section>
 
       {message ? <p className="toast">{message}</p> : null}
+      {appVersion ? (
+        <p className="muted small version-footer">TradeIntel Bridge v{appVersion}</p>
+      ) : null}
     </div>
   );
 }

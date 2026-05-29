@@ -471,10 +471,7 @@ pub fn run() {
             let deps = verify_dependencies(&resource_dir(&app.handle()));
             let _ = app.handle().emit("dependency-status", &deps);
 
-            let cfg = manager.get_config();
-            if cfg.autostart_bridge {
-                let _ = manager.start();
-            }
+            manager.try_autostart();
 
             spawn_status_emitter(app.handle().clone(), manager);
 

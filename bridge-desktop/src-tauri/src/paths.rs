@@ -14,47 +14,67 @@ pub fn is_invalid_mt5_files_override(path: &str) -> bool {
         || lower.contains("ngrok")
 }
 
-/// Normalize user override to MQL5/Files (append MQL5/Files if terminal hash or root given).
-pub fn normalize_mt5_files_dir(path: &str) -> Option<PathBuf> {
-    let trimmed = path.trim().trim_matches('"').trim_matches('\'');
-    if trimmed.is_empty() || is_invalid_mt5_files_override(trimmed) {
-        return None;
+fn ends_with_mql5_files(path: &Path) -> bool {
+    let s = path.to_string_lossy().to_lowercase();
+    s.ends_with("mql5/files") || s.ends_with("mql5\\files")
+}
+
+/// Expand Windows %VAR% environment variables (matches Python expandvars).
+#[cfg(target_os = "windows")]
+fn expand_env_vars(path: &str) -> String {
+    let mut result = path.to_string();
+    for (key, value) in std::env::vars() {
+        result = result.replace(&format!("%{key}%"), &value);
     }
+    result
+}
 
-    let mut p = PathBuf::from(trimmed);
+#[cfg(not(target_os = "windows"))]
+fn expand_env_vars(path: &str) -> String {
+    path.to_string()
+}
 
-    // If path ends with mt5-commands or mt5-responses, use parent Files folder
+/// Resolve a path to MQL5/Files, creating the folder when parent MT5 data dir exists.
+fn resolve_to_mql5_files(mut p: PathBuf) -> Option<PathBuf> {
     let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if name == "mt5-commands" || name == "mt5-responses" {
         p = p.parent()?.to_path_buf();
     }
 
+    if ends_with_mql5_files(&p) {
+        let _ = std::fs::create_dir_all(&p);
+        return p.is_dir().then_some(p);
+    }
+
     let path_str = p.to_string_lossy().to_lowercase();
-    if path_str.ends_with("mql5/files") || path_str.ends_with("mql5\\files") {
-        return Some(p);
-    }
+    let with_mql5 = p.join("MQL5").join("Files");
 
-    // Terminal\<hash> without MQL5\Files
-    if path_str.contains("metaquotes") && path_str.contains("terminal") {
-        let with_mql5 = p.join("MQL5").join("Files");
+    if path_str.contains("metaquotes") && path_str.contains("terminal") && p.is_dir() {
+        let _ = std::fs::create_dir_all(&with_mql5);
         if with_mql5.is_dir() {
             return Some(with_mql5);
         }
     }
 
-    // Program Files\MetaTrader 5 without MQL5\Files
-    if path_str.contains("metatrader") && !path_str.contains("mql5") {
-        let with_mql5 = p.join("MQL5").join("Files");
+    if (path_str.contains("metatrader") || path_str.contains("mt5")) && p.is_dir() {
+        let _ = std::fs::create_dir_all(&with_mql5);
         if with_mql5.is_dir() {
             return Some(with_mql5);
         }
-    }
-
-    if p.is_dir() {
-        return Some(p);
     }
 
     None
+}
+
+/// Normalize user override to MQL5/Files (append MQL5/Files if terminal hash or install root given).
+pub fn normalize_mt5_files_dir(path: &str) -> Option<PathBuf> {
+    let expanded = expand_env_vars(path);
+    let trimmed = expanded.trim().trim_matches('"').trim_matches('\'');
+    if trimmed.is_empty() || is_invalid_mt5_files_override(trimmed) {
+        return None;
+    }
+
+    resolve_to_mql5_files(PathBuf::from(trimmed))
 }
 
 /// Create mt5-commands and mt5-responses under the Files folder.
@@ -131,6 +151,7 @@ pub struct Mt5FilesCandidateInfo {
 pub struct Mt5FilesCandidatesResult {
     pub candidates: Vec<Mt5FilesCandidateInfo>,
     pub selected_path: Option<String>,
+    pub saved_override: Option<String>,
     pub appdata_terminal_root: Option<String>,
 }
 
@@ -179,8 +200,17 @@ fn terminal_hashes_files_dirs(terminal_root: &Path) -> Vec<PathBuf> {
         return out;
     };
     for entry in entries.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
         let files = entry.path().join("MQL5").join("Files");
-        push_if_exists(&mut out, files);
+        if files.is_dir() {
+            push_if_exists(&mut out, files);
+        } else {
+            // Terminal hash exists (MT5 ran once) — create MQL5/Files if missing
+            let _ = std::fs::create_dir_all(&files);
+            push_if_exists(&mut out, files);
+        }
     }
     out
 }
@@ -306,6 +336,37 @@ pub fn detect_mt5_files_dir() -> Option<PathBuf> {
     Some(selected)
 }
 
+/// Log detection diagnostics (for bridge.log troubleshooting).
+pub fn log_mt5_detection_failure(user_override: Option<&str>, log: impl Fn(&str)) {
+    log("MT5 Files detection failed");
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        log(&format!("APPDATA={appdata}"));
+        let terminal_root = PathBuf::from(&appdata).join("MetaQuotes").join("Terminal");
+        log(&format!(
+            "Terminal root exists: {}",
+            terminal_root.is_dir()
+        ));
+    }
+    if let Some(raw) = user_override {
+        if !raw.trim().is_empty() {
+            log(&format!("Saved override (raw): {raw}"));
+            if let Some(normalized) = normalize_mt5_files_dir(raw) {
+                log(&format!(
+                    "Saved override (normalized): {}",
+                    normalized.display()
+                ));
+            } else {
+                log("Saved override could not be normalized to MQL5\\Files");
+            }
+        }
+    }
+    let candidates = collect_mt5_files_candidates();
+    log(&format!("Candidate count: {}", candidates.len()));
+    for (i, c) in candidates.iter().enumerate() {
+        log(&format!("  candidate[{i}]: {}", c.display()));
+    }
+}
+
 /// List all candidate paths and which would be auto-selected (for UI diagnostics).
 pub fn list_mt5_files_candidates(user_override: Option<&str>) -> Mt5FilesCandidatesResult {
     let appdata_terminal_root = std::env::var("APPDATA")
@@ -314,23 +375,34 @@ pub fn list_mt5_files_candidates(user_override: Option<&str>) -> Mt5FilesCandida
         .filter(|p| p.is_dir())
         .map(|p| p.to_string_lossy().to_string());
 
-    if let Some(raw) = user_override {
-        if !raw.trim().is_empty() {
-            if let Some(normalized) = normalize_mt5_files_dir(raw) {
-                return Mt5FilesCandidatesResult {
-                    candidates: vec![candidate_info(&normalized)],
-                    selected_path: Some(normalized.to_string_lossy().to_string()),
-                    appdata_terminal_root,
-                };
-            }
+    let saved_override = user_override.and_then(|raw| {
+        if raw.trim().is_empty() {
+            None
+        } else {
+            normalize_mt5_files_dir(raw).map(|p| p.to_string_lossy().to_string())
+        }
+    });
+
+    let paths = collect_mt5_files_candidates();
+    let selected = saved_override
+        .as_ref()
+        .and_then(|s| normalize_mt5_files_dir(s))
+        .or_else(|| select_best_mt5_files_dir(&paths));
+
+    let mut candidates: Vec<Mt5FilesCandidateInfo> =
+        paths.iter().map(|p| candidate_info(p)).collect();
+
+    if let Some(ref override_path) = saved_override {
+        let info = candidate_info(Path::new(override_path));
+        if !candidates.iter().any(|c| c.path == info.path) {
+            candidates.insert(0, info);
         }
     }
 
-    let paths = collect_mt5_files_candidates();
-    let selected = select_best_mt5_files_dir(&paths);
     Mt5FilesCandidatesResult {
-        candidates: paths.iter().map(|p| candidate_info(p)).collect(),
+        candidates,
         selected_path: selected.map(|p| p.to_string_lossy().to_string()),
+        saved_override,
         appdata_terminal_root,
     }
 }

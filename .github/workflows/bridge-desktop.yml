@@ -7,6 +7,7 @@ on:
     paths:
       - 'bridge-desktop/**'
       - 'mt5-bridge/wine-mt5-connector.py'
+      - 'mt5-bridge/mt5_paths.py'
       - 'mt5-bridge/MT5FileBridgeEA.mq5'
       - 'mt5-bridge/CLIENT_PLATFORMS.md'
       - '.github/workflows/bridge-desktop.yml'
@@ -102,9 +103,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=bridge-desktop-v1.0.0
+          TAG=bridge-desktop-v1.0.1
           gh release delete "$TAG" -y 2>/dev/null || true
           gh release create "$TAG" private/downloads/bridge-desktop/* \
-            --title "TradeIntel Bridge Desktop v1.0.0" \
-            --notes "Self-contained TradeIntel Bridge installers (Python + cloudflared bundled). Download from your TradeIntel dashboard." \
+            --title "TradeIntel Bridge Desktop v1.0.1" \
+            --notes "Windows MT5 Files detection fix: Detect MT5 folder, broker Program Files scan, improved path validation. Self-contained installers (Python + cloudflared bundled). Download from your TradeIntel dashboard." \
             --latest

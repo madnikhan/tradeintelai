@@ -47,6 +47,7 @@ mkdir -p "$PKG/colleague" "$PKG/windows"
 SRC="$ROOT/mt5-bridge"
 
 cp "$SRC/wine-mt5-connector.py" "$PKG/"
+cp "$SRC/mt5_paths.py" "$PKG/"
 cp "$SRC/MT5FileBridgeEA.mq5" "$PKG/"
 cp "$SRC/configure-paths.sh" "$PKG/"
 cp "$SRC/start-wine-bridge.sh" "$PKG/"

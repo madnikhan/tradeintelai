@@ -15,10 +15,14 @@ This folder contains Windows launch scripts for the MT5 file-based HTTP bridge.
 3. **Pin stable Python if you have 3.13 and 3.15 alpha** (PowerShell, before starting the bridge):  
    `$env:MT5_PYTHON_VERSION = "3.13"`
 
-4. **MetaTrader 5**  
-   - Install/open **MT5** once.  
-   - In MT5: **File → Open Data Folder** → confirm **`MQL5\Files`** exists (create **Files** if missing).  
-   - Copy **`mt5-bridge\MT5FileBridgeEA.mq5`** into MT5’s **Experts** folder, compile in MetaEditor (**F7**), attach the EA to a chart.
+4. **MetaTrader 5 (required before the bridge can start)**  
+   - Install and **open MT5 at least once** and log in. Windows creates  
+     `%APPDATA%\MetaQuotes\Terminal\<hash>\MQL5\Files` only after the first run.  
+   - In MT5: **File → Open Data Folder** → open **`MQL5`** → **`Files`** (create **Files** if missing).  
+   - Copy the full **Files** path from Explorer’s address bar — not Experts, not a dashboard URL.  
+   - **TradeIntel Bridge (desktop app v1.0.1+):** Advanced → **MT5 Files path** → paste → **Save settings**, or use **Detect MT5 folder**.  
+   - Broker installs (e.g. **HFM MetaTrader 5**) still use the AppData Terminal folder after first launch.  
+   - Copy **`mt5-bridge\MT5FileBridgeEA.mq5`** into MT5’s **Experts** folder, compile in MetaEditor (**F7**), attach the EA to a chart, and enable **Algo Trading**.
 
 5. **Set MT5 file folder for the bridge** (PowerShell — use **your** path from “Open Data Folder”):  
    `$env:MT5_FILES_DIR = "$env:APPDATA\MetaQuotes\Terminal\<YOUR_HASH>\MQL5\Files"`  
@@ -123,7 +127,16 @@ $env:TRADEINTELAI_ROOT = "C:\Users\Admin\tradeintelai"
 
 ### If MT5 folder was not detected
 
-The bridge can still start; Python falls back to **`mt5-commands`** and **`mt5-responses`** in the **repo root** (same level as the `mt5-bridge` folder). For real MT5 data, open MetaTrader 5 once so `AppData\MetaQuotes\Terminal\...\MQL5\Files` exists, then restart the bridge—or set **`MT5_FILES_DIR`** manually (see below).
+**TradeIntel Bridge desktop app** will not start until **`MQL5\Files`** is found or you paste a valid path in Advanced.
+
+1. Open **MetaTrader 5** and log in once.  
+2. **File → Open Data Folder** → **MQL5** → **Files**.  
+3. Paste that path in the bridge app (Advanced → Save) or set **`MT5_FILES_DIR`** for script-based bridges (see below).  
+4. Start the bridge again.
+
+Attaching the EA alone does **not** create the path the bridge needs — it uses **Files** for `mt5-commands` / `mt5-responses`, not Experts.
+
+For **StartBridge.bat** only: if detection fails, Python may fall back to **`mt5-commands`** / **`mt5-responses`** in the **repo root**; for live MT5 trading, always use the real **Files** folder.
 
 ### What it starts
 
@@ -208,10 +221,18 @@ That usually meant the script exited with an error immediately. Use the updated 
 
 ### Manual override (recommended if you have multiple terminals)
 
+Get the path from MT5: **File → Open Data Folder** → **MQL5** → **Files** → copy from the address bar.
+
+**TradeIntel Bridge (desktop):** Advanced → **MT5 Files path** → paste → **Save settings** → **Start bridge**.
+
+**PowerShell scripts:**
+
 ```powershell
 $env:MT5_FILES_DIR = "$env:APPDATA\MetaQuotes\Terminal\<TERMINAL_HASH>\MQL5\Files"
 .\mt5-bridge\windows\StartBridge.ps1
 ```
+
+Do **not** paste a Vercel dashboard URL or tunnel URL into the MT5 Files field — only a Windows folder path ending in `\MQL5\Files`.
 
 ### Stop the bridge
 

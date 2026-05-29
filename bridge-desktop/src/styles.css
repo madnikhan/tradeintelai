@@ -316,3 +316,9 @@ button.small {
   border: 1px solid rgba(34, 211, 238, 0.4);
   color: #a5f3fc;
 }
+
+.version-footer {
+  text-align: center;
+  margin-top: 0.5rem;
+  opacity: 0.6;
+}

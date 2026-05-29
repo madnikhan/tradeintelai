@@ -1,6 +1,6 @@
 [package]
 name = "tradeintel-bridge-desktop"
-version = "1.0.0"
+version = "1.0.1"
 description = "TradeIntel AI MT5 Bridge Desktop"
 authors = ["TradeIntel AI"]
 edition = "2021"

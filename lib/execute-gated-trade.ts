@@ -5,6 +5,7 @@
 import { httpBridge } from '@/lib/http-bridge-connector';
 import { registerPositionWatch } from '@/lib/register-position-watch';
 import { TradingModeManager } from '@/lib/trading-mode';
+import { notifyTradeExecutedClient } from '@/lib/notifications/client-notify';
 import type { ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
 
 export interface ExecuteGatedTradeParams {
@@ -144,6 +145,19 @@ export async function executeGatedTrade(
         ticket: result.order_id ?? result.orderId,
         source,
         recommendation: analysis.recommendation,
+      });
+
+      void notifyTradeExecutedClient({
+        symbol: symbolNorm,
+        direction,
+        lots: Math.max(0.01, Math.min(analysis.suggestedPositionSize, 200)),
+        entry: parseEntryPrice(analysis),
+        stopLoss: analysis.suggestedStopLoss!,
+        takeProfit: analysis.suggestedTakeProfit!,
+        orderId: result.order_id ?? result.orderId,
+        score: analysis.overallScore,
+        confidence: analysis.confidence,
+        gatePassed: analysis.gateStatus?.executionPermitted ?? true,
       });
     }
 

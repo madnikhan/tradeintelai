@@ -11,6 +11,10 @@ import { loadUserBridgeSettings, saveUserBridgeSettings } from '@/lib/firebase/u
 import { grantMt5AccountAccess } from '@/lib/firebase/mt5-accounts';
 import { BridgeDownloadButton } from '@/components/BridgeDownloadButton';
 import { BridgeDesktopDownloadButton } from '@/components/BridgeDesktopDownloadButton';
+import { MobileAlertsPanel } from '@/components/MobileAlertsPanel';
+import { TelegramConnectPanel } from '@/components/TelegramConnectPanel';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
+import { isAlertModeEnabled, setAlertModeEnabled } from '@/lib/alert-mode-service';
 import Link from 'next/link';
 
 export function Settings() {
@@ -28,6 +32,12 @@ export function Settings() {
   const [shareAccountId, setShareAccountId] = useState('');
   const [saved, setSaved] = useState<boolean>(false);
   const { active, status, currentPeriodEnd } = useSubscription();
+  const push = usePushNotifications();
+  const [alertMode, setAlertMode] = useState(false);
+
+  useEffect(() => {
+    setAlertMode(isAlertModeEnabled());
+  }, []);
 
   useEffect(() => {
     // Load saved settings from localStorage
@@ -220,10 +230,79 @@ export function Settings() {
           </div>
         </div>
 
+        {/* Mobile & Alerts */}
+        <div className="bg-[#0d1321] rounded-xl border border-[#1e2738] p-6 lg:col-span-2">
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>📱</span> Mobile & Alerts
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <p className="text-xs text-gray-400">
+                Algo execution runs on your <strong className="text-gray-300">home PC</strong> (MT5 Desktop + TradeIntel Bridge v1.0.1+).
+                Use your phone as alerts + approve — not MT5 mobile app.
+              </p>
+              <details className="text-xs text-gray-400 border border-[#1e2738] rounded-lg p-3">
+                <summary className="cursor-pointer text-cyan-400 font-medium">Add to Home Screen (iOS / Android)</summary>
+                <ul className="mt-2 space-y-1 list-disc list-inside">
+                  <li>iPhone: Safari → Share → Add to Home Screen</li>
+                  <li>Android: Chrome menu → Install app / Add to Home screen</li>
+                </ul>
+              </details>
+              <MobileAlertsPanel />
+              <div className="flex items-center justify-between pt-2">
+                <div>
+                  <p className="text-sm text-white font-medium">Alert Mode</p>
+                  <p className="text-xs text-gray-500">Keep dashboard open — scans for executable signals every 5 min</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={alertMode}
+                    onChange={(e) => {
+                      setAlertModeEnabled(e.target.checked);
+                      setAlertMode(e.target.checked);
+                      if (e.target.checked) window.location.reload();
+                    }}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-[#1e2738] rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500 relative" />
+                </label>
+              </div>
+              {push.supported ? (
+                <div className="flex flex-wrap gap-2">
+                  {!push.enabled ? (
+                    <button
+                      type="button"
+                      onClick={() => void push.enable()}
+                      disabled={push.loading}
+                      className="px-4 py-2 rounded-lg bg-cyan-600 text-white text-sm min-h-[44px]"
+                    >
+                      Enable push notifications
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={push.disable}
+                      className="px-4 py-2 rounded-lg bg-[#1e2738] text-gray-300 text-sm min-h-[44px]"
+                    >
+                      Push enabled
+                    </button>
+                  )}
+                </div>
+              ) : null}
+              {push.error ? <p className="text-xs text-rose-400">{push.error}</p> : null}
+            </div>
+            <div className="space-y-4 border-t md:border-t-0 md:border-l border-[#1e2738] md:pl-6 pt-4 md:pt-0">
+              <h4 className="text-sm font-semibold text-white">Telegram</h4>
+              <TelegramConnectPanel />
+            </div>
+          </div>
+        </div>
+
         {/* Notifications */}
         <div className="bg-[#0d1321] rounded-xl border border-[#1e2738] p-6">
           <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <span>🔔</span> Notifications
+            <span>🔔</span> Scan Notifications
           </h3>
           <div className="space-y-4">
             <div className="flex items-center justify-between">

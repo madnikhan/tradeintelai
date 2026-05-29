@@ -34,6 +34,8 @@ import { getBridgeUrl } from '@/config/bridge-config'
 import { AuthButton } from '@/components/AuthButton'
 import { BridgeSetupBanner } from '@/components/BridgeSetupBanner'
 import { DemoSuccessGoals } from '@/components/DemoSuccessGoals'
+import { Suspense } from 'react'
+import { DashboardApproveHandler } from '@/components/DashboardApproveHandler'
 
 const tabPanelFallback = () => <LoadingSkeleton type="card" />
 
@@ -1051,6 +1053,10 @@ export default function DashboardContent() {
         </main>
 
         <MobileTabBar activeTab={activeTab} onTabChange={setActiveTab} />
+
+        <Suspense fallback={null}>
+          <DashboardApproveHandler onTabChange={setActiveTab} />
+        </Suspense>
       </div>
     </div>
   );

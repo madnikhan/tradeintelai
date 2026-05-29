@@ -98,6 +98,19 @@ Phone browser → tradeintelai.vercel.app/dashboard
               MT5 Desktop + EA
 ```
 
+### Mobile algo trading (alerts + approve)
+
+Supported via the TradeIntel **PWA** (Add to Home Screen) + home PC bridge:
+
+| Feature | How |
+|---------|-----|
+| **Trade execution alerts** | Settings → Connect **Telegram** bot (private DM) + optional public channel |
+| **Push notifications** | Settings → Enable push (requires Firebase VAPID key on server) |
+| **Alert Mode** | Settings → Alert Mode — keeps dashboard open on PC, scans every 5 min for executable signals |
+| **Tap to approve** | Open dashboard link with `?approve=1&symbol=EURUSD` from push/Telegram |
+
+**Checklist:** PC on → Bridge v1.0.1 → MT5 EA connected → phone Home Screen → Telegram linked → Alert Mode (optional)
+
 ---
 
 ## Quick reference
@@ -106,6 +119,7 @@ Phone browser → tradeintelai.vercel.app/dashboard
 |----------|--------|
 | Does the Python bridge work on Windows? | **Yes** — primary platform |
 | Can my client use MT5 on iPhone? | **Not for the bridge** — use phone browser + Windows VPS/PC |
+| Telegram trade alerts? | **Yes** — link bot in Settings; channel for broadcast signals |
 | Must MT5 and bridge be on the same machine? | **Yes** — shared filesystem for file IPC |
 | Can Vercel host the bridge? | **No** — bridge runs on client/colleague PC or VPS |
 

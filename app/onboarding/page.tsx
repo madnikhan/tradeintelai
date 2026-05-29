@@ -209,6 +209,25 @@ function OnboardingContent() {
             </button>
           </div>
         </div>
+
+        <div className="card border-[#1e2738] p-6 space-y-4">
+          <h2 className="text-lg font-semibold">Step 4 — Mobile alerts (optional)</h2>
+          <p className="text-sm text-gray-400">
+            Trade from your phone browser — execution still runs on your home PC bridge.
+          </p>
+          <ol className="text-sm text-gray-300 space-y-2 list-decimal list-inside">
+            <li>Add TradeIntel to your phone Home Screen (Safari Share or Chrome Install app)</li>
+            <li>In Settings → <strong>Mobile & Alerts</strong>, connect Telegram for trade execution messages</li>
+            <li>Enable <strong>Alert Mode</strong> while the dashboard stays open on your PC</li>
+          </ol>
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard?tab=settings')}
+            className="px-4 py-2 rounded-lg bg-[#1e2738] hover:bg-[#2a3548] text-sm"
+          >
+            Open Settings →
+          </button>
+        </div>
       </div>
     </main>
   );

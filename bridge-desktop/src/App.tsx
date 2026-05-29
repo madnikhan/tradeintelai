@@ -508,6 +508,15 @@ export default function App() {
       </section>
 
       <section className="panel">
+        <h2>Mobile alerts</h2>
+        <p className="muted small">
+          For phone notifications while you trade: open the TradeIntel dashboard on your PC → Settings →{' '}
+          <strong>Mobile &amp; Alerts</strong> → enable Alert Mode and connect Telegram. Keep this bridge
+          running with MT5 EA connected.
+        </p>
+      </section>
+
+      <section className="panel">
         <h2>MT5 data folder</h2>
         <p className="muted small">
           Open MT5 at least once so Windows creates{' '}

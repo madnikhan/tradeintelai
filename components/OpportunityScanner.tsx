@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { gatedEngineAdapter } from '@/lib/gated-engine-adapter';
 import { executeGatedTrade } from '@/lib/execute-gated-trade';
+import { ApproveExecuteSheet } from '@/components/ApproveExecuteSheet';
+import { saveScanResultsForAlerts } from '@/components/MobileAlertsPanel';
 import { useTradingContext } from '@/context/TradingContext';
 import { TRADING_RULES } from '@/config/trading-rules';
 import { TradingHoursFilter } from '@/lib/trading-hours';
@@ -37,6 +39,10 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
     symbol: string;
     success: boolean;
     text: string;
+  } | null>(null);
+  const [executeSheet, setExecuteSheet] = useState<{
+    displaySymbol: string;
+    sym: string;
   } | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
@@ -84,6 +90,11 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
         success: false,
         text: 'No cached analysis — scan again first',
       });
+      return;
+    }
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+    if (isMobile) {
+      setExecuteSheet({ displaySymbol, sym });
       return;
     }
     if (
@@ -200,6 +211,14 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
     // Sort by strength (score * confidence)
     results.sort((a, b) => b.strength - a.strength);
     setOpportunities(results);
+    saveScanResultsForAlerts(
+      results.map((r) => ({
+        symbol: r.symbol,
+        recommendation: r.recommendation,
+        score: r.score,
+        executionPermitted: r.executionPermitted,
+      }))
+    );
     setIsScanning(false);
     setLastScanTime(new Date());
     setTradingHours(TradingHoursFilter.analyze());
@@ -1062,6 +1081,22 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
           action={{
             label: '🔍 Scan All Pairs',
             onClick: scanAllPairs,
+          }}
+        />
+      ) : null}
+
+      {executeSheet ? (
+        <ApproveExecuteSheet
+          symbol={executeSheet.displaySymbol}
+          analysis={gatedEngineAdapter.getCachedAnalysis(executeSheet.sym)!}
+          onClose={() => setExecuteSheet(null)}
+          onDone={(success, text) => {
+            setQuickExecuteMessage({
+              symbol: executeSheet.displaySymbol,
+              success,
+              text,
+            });
+            setTimeout(() => setQuickExecuteMessage(null), 8000);
           }}
         />
       ) : null}

@@ -516,20 +516,62 @@ fn reveal_file_in_folder(path: &Path) -> bool {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn discover_metaeditor_executables() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let static_paths = [
+        r"C:\Program Files\MetaTrader 5\metaeditor64.exe",
+        r"C:\Program Files\MetaTrader 5\MetaEditor64.exe",
+        r"C:\Program Files (x86)\MetaTrader 5\metaeditor64.exe",
+        r"C:\Program Files\HFM Metatrader 5\metaeditor64.exe",
+        r"C:\Program Files\HFM Metatrader 5\MetaEditor64.exe",
+        r"C:\Program Files (x86)\HFM Metatrader 5\metaeditor64.exe",
+    ];
+    for p in static_paths {
+        let pb = PathBuf::from(p);
+        if pb.exists() && !out.contains(&pb) {
+            out.push(pb);
+        }
+    }
+    for env_key in ["ProgramFiles", "ProgramFiles(x86)"] {
+        let Ok(root) = std::env::var(env_key) else {
+            continue;
+        };
+        let root_path = PathBuf::from(&root);
+        let Ok(entries) = std::fs::read_dir(&root_path) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let name = dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if name.contains("metatrader") || name.contains("mt5") {
+                for exe_name in ["metaeditor64.exe", "MetaEditor64.exe"] {
+                    let exe = dir.join(exe_name);
+                    if exe.exists() && !out.contains(&exe) {
+                        out.push(exe);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 fn try_open_in_metaeditor(path: &Path) -> bool {
     let path_str = path.to_string_lossy();
 
     #[cfg(target_os = "windows")]
     {
-        let candidates = [
-            r"C:\Program Files\MetaTrader 5\metaeditor64.exe",
-            r"C:\Program Files\MetaTrader 5\MetaEditor64.exe",
-            r"C:\Program Files (x86)\MetaTrader 5\metaeditor64.exe",
-        ];
-        for exe in candidates {
-            let exe_path = PathBuf::from(exe);
-            if exe_path.exists() {
-                return Command::new(&exe_path).arg(path).spawn().is_ok();
+        for exe_path in discover_metaeditor_executables() {
+            if Command::new(&exe_path).arg(path).spawn().is_ok() {
+                return true;
             }
         }
         return Command::new("cmd")

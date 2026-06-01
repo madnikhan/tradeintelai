@@ -103,9 +103,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=bridge-desktop-v1.0.1
+          TAG=bridge-desktop-v1.0.2
           gh release delete "$TAG" -y 2>/dev/null || true
           gh release create "$TAG" private/downloads/bridge-desktop/* \
-            --title "TradeIntel Bridge Desktop v1.0.1" \
-            --notes "Windows MT5 Files detection fix: Detect MT5 folder, broker Program Files scan, improved path validation. Self-contained installers (Python + cloudflared bundled). Download from your TradeIntel dashboard." \
+            --title "TradeIntel Bridge Desktop v1.0.2" \
+            --notes "Browse for MT5 folder (accepts Experts/MQL5/Files), HFM Program Files scan, Experts→Files path normalization, clickable candidate list, HFM MetaEditor discovery. Self-contained installers. Download from your TradeIntel dashboard." \
             --latest

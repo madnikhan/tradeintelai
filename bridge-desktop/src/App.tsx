@@ -76,6 +76,11 @@ interface Mt5FilesCandidatesResult {
   appdata_terminal_root: string | null;
 }
 
+interface PickMt5FilesDirResult {
+  normalized_path: string;
+  converted_from_experts: boolean;
+}
+
 const STATE_LABEL: Record<BridgeState, string> = {
   stopped: 'Stopped',
   starting: 'Starting…',
@@ -122,6 +127,7 @@ export default function App() {
   const [lastEaPath, setLastEaPath] = useState<string | null>(null);
   const [mt5Candidates, setMt5Candidates] = useState<Mt5FilesCandidatesResult | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [pathNote, setPathNote] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!inDesktop) return;
@@ -323,6 +329,7 @@ export default function App() {
       const path = await invoke<string | null>('detect_mt5_files_dir_cmd');
       if (path) {
         setMt5Path(path);
+        setPathNote(null);
         setMessage(`MT5 Files folder detected: ${path}`);
         await refreshMt5Candidates();
         await refresh();
@@ -330,6 +337,44 @@ export default function App() {
     } catch (e) {
       setMessage(String(e));
       await refreshMt5Candidates();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleBrowseMt5Folder = async () => {
+    if (!inDesktop) return;
+    setBusy(true);
+    try {
+      const result = await invoke<PickMt5FilesDirResult>('pick_mt5_files_dir_cmd');
+      setMt5Path(result.normalized_path);
+      setPathNote(
+        result.converted_from_experts
+          ? 'Converted Experts folder to MQL5\\Files for the bridge.'
+          : null
+      );
+      setMessage(`Using MT5 Files folder: ${result.normalized_path}`);
+      await refreshMt5Candidates();
+      await refresh();
+    } catch (e) {
+      setMessage(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSelectCandidate = async (path: string) => {
+    if (!inDesktop) return;
+    setBusy(true);
+    try {
+      const normalized = await invoke<string>('set_mt5_files_dir_cmd', { path });
+      setMt5Path(normalized);
+      setPathNote(null);
+      setMessage(`Saved MT5 Files folder: ${normalized}`);
+      await refreshMt5Candidates();
+      await refresh();
+    } catch (e) {
+      setMessage(String(e));
     } finally {
       setBusy(false);
     }
@@ -343,6 +388,7 @@ export default function App() {
 
   const state = status?.state ?? 'stopped';
   const tunnelState = tunnelStatus?.state ?? 'stopped';
+  const hasMt5FilesPath = Boolean(mt5Path.trim() || status?.mt5_files_dir);
 
   return (
     <div className="app">
@@ -448,6 +494,13 @@ export default function App() {
             MT5 Files: <code>{mt5Path}</code>
           </p>
         ) : null}
+        {pathNote ? <p className="muted small path-note">{pathNote}</p> : null}
+        {!hasMt5FilesPath && inDesktop ? (
+          <p className="path-warning">
+            Set your MT5 folder before starting the bridge — use <strong>Browse for MT5 folder</strong>{' '}
+            or <strong>Detect MT5 folder</strong> below.
+          </p>
+        ) : null}
         {state === 'error' && !mt5Path ? (
           <div className="mt5-error-help">
             <p className="muted small">
@@ -457,7 +510,9 @@ export default function App() {
             <ol className="steps compact">
               <li>Open MetaTrader 5 and log in once</li>
               <li>File → Open Data Folder → open <code>MQL5</code> → <code>Files</code></li>
-              <li>Click <strong>Detect MT5 folder</strong> below (or paste path in Advanced)</li>
+              <li>
+                Click <strong>Browse for MT5 folder</strong> or <strong>Detect MT5 folder</strong> below
+              </li>
               <li>Save settings → Start bridge → enable Algo Trading + EA on chart</li>
             </ol>
           </div>
@@ -465,7 +520,11 @@ export default function App() {
       </section>
 
       <section className="actions">
-        <button type="button" onClick={handleStart} disabled={busy || !inDesktop || !deps?.python_ready}>
+        <button
+          type="button"
+          onClick={handleStart}
+          disabled={busy || !inDesktop || !deps?.python_ready || !hasMt5FilesPath}
+        >
           Start bridge only
         </button>
         <button type="button" className="secondary" onClick={handleStop} disabled={busy || !inDesktop}>
@@ -518,12 +577,20 @@ export default function App() {
 
       <section className="panel">
         <h2>MT5 data folder</h2>
+        <p className="hfm-callout">
+          <strong>HFM / broker installs:</strong> use <strong>Browse for MT5 folder</strong> and select your{' '}
+          <code>MQL5\Experts</code> or <code>MQL5\Files</code> folder (e.g.{' '}
+          <code>C:\Program Files\HFM Metatrader 5\MQL5\Experts</code>). The app converts Experts to Files
+          automatically. You can also use File → Open Data Folder in MT5 → <code>MQL5\Files</code>.
+        </p>
         <p className="muted small">
           Open MT5 at least once so Windows creates{' '}
-          <code>AppData\Roaming\MetaQuotes\Terminal\…\MQL5\Files</code>. Broker installs
-          (e.g. HFM MetaTrader 5) use the same data folder after first launch.
+          <code>AppData\Roaming\MetaQuotes\Terminal\…\MQL5\Files</code>.
         </p>
         <div className="actions">
+          <button type="button" onClick={() => void handleBrowseMt5Folder()} disabled={busy || !inDesktop}>
+            Browse for MT5 folder
+          </button>
           <button
             type="button"
             className="secondary"
@@ -556,12 +623,20 @@ export default function App() {
           <ul className="candidate-list">
             {mt5Candidates.candidates.map((c) => (
               <li key={c.path} className={c.path === mt5Candidates.selected_path ? 'selected' : ''}>
-                <code>{c.path}</code>
-                {c.path === mt5Candidates.selected_path
-                  ? c.path === mt5Candidates.saved_override
-                    ? ' (saved)'
-                    : ' (auto)'
-                  : ''}
+                <button
+                  type="button"
+                  className="candidate-btn"
+                  onClick={() => void handleSelectCandidate(c.path)}
+                  disabled={busy || !inDesktop}
+                >
+                  <code>{c.path}</code>
+                  {c.has_commands_dir || c.has_responses_dir ? ' · bridge activity' : ''}
+                  {c.path === mt5Candidates.selected_path
+                    ? c.path === mt5Candidates.saved_override
+                      ? ' (saved)'
+                      : ' (auto)'
+                    : ''}
+                </button>
               </li>
             ))}
           </ul>
@@ -589,16 +664,20 @@ export default function App() {
           />
         </label>
         <label className="field">
-          MT5 Files path (paste from File → Open Data Folder → MQL5 → Files)
+          MT5 Files path (optional paste)
           <input
             type="text"
             value={mt5Path}
-            onChange={(e) => setMt5Path(e.target.value)}
-            placeholder="C:\Users\...\AppData\Roaming\MetaQuotes\Terminal\...\MQL5\Files"
+            onChange={(e) => {
+              setMt5Path(e.target.value);
+              setPathNote(null);
+            }}
+            placeholder="C:\Program Files\HFM Metatrader 5\MQL5\Experts or ...\MQL5\Files"
           />
         </label>
         <p className="muted small">
-          Paste only the <strong>Files</strong> folder path — not Experts, not a dashboard URL.
+          Paste <strong>Files</strong>, <strong>Experts</strong>, <strong>MQL5</strong>, or your Terminal data
+          folder — not a dashboard URL. Prefer <strong>Browse for MT5 folder</strong> above.
         </p>
         <button type="button" onClick={handleSave} disabled={!inDesktop}>
           Save settings

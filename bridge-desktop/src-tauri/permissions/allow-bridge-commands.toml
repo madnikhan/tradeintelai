@@ -17,5 +17,7 @@ commands.allow = [
   "open_mt5_data_folder",
   "list_mt5_files_candidates",
   "detect_mt5_files_dir_cmd",
+  "pick_mt5_files_dir_cmd",
+  "set_mt5_files_dir_cmd",
   "show_main_window",
 ]

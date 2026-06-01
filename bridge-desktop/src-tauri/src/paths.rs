@@ -19,6 +19,24 @@ fn ends_with_mql5_files(path: &Path) -> bool {
     s.ends_with("mql5/files") || s.ends_with("mql5\\files")
 }
 
+fn segment_eq_ignore_case(path: &Path, name: &str) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.eq_ignore_ascii_case(name))
+        .unwrap_or(false)
+}
+
+/// True if user picked an Experts folder (we normalize to sibling Files).
+pub fn path_looks_like_experts(path: &str) -> bool {
+    let expanded = expand_env_vars(path);
+    let trimmed = expanded.trim().trim_matches('"').trim_matches('\'');
+    let p = PathBuf::from(trimmed);
+    segment_eq_ignore_case(&p, "Experts")
+        && p.parent()
+            .map(|parent| segment_eq_ignore_case(parent, "MQL5"))
+            .unwrap_or(false)
+}
+
 /// Expand Windows %VAR% environment variables (matches Python expandvars).
 #[cfg(target_os = "windows")]
 fn expand_env_vars(path: &str) -> String {
@@ -46,6 +64,26 @@ fn resolve_to_mql5_files(mut p: PathBuf) -> Option<PathBuf> {
         return p.is_dir().then_some(p);
     }
 
+    // e.g. C:\Program Files\HFM Metatrader 5\MQL5\Experts → …\MQL5\Files
+    if segment_eq_ignore_case(&p, "Experts") {
+        if let Some(mql5) = p.parent().filter(|parent| segment_eq_ignore_case(parent, "MQL5")) {
+            let files = mql5.join("Files");
+            let _ = std::fs::create_dir_all(&files);
+            if files.is_dir() {
+                return Some(files);
+            }
+        }
+    }
+
+    // User selected the MQL5 folder directly
+    if segment_eq_ignore_case(&p, "MQL5") {
+        let files = p.join("Files");
+        let _ = std::fs::create_dir_all(&files);
+        if files.is_dir() {
+            return Some(files);
+        }
+    }
+
     let path_str = p.to_string_lossy().to_lowercase();
     let with_mql5 = p.join("MQL5").join("Files");
 
@@ -56,7 +94,11 @@ fn resolve_to_mql5_files(mut p: PathBuf) -> Option<PathBuf> {
         }
     }
 
-    if (path_str.contains("metatrader") || path_str.contains("mt5")) && p.is_dir() {
+    if (path_str.contains("metatrader") || path_str.contains("mt5"))
+        && !path_str.contains("mql5\\experts")
+        && !path_str.contains("mql5/experts")
+        && p.is_dir()
+    {
         let _ = std::fs::create_dir_all(&with_mql5);
         if with_mql5.is_dir() {
             return Some(with_mql5);
@@ -318,7 +360,16 @@ fn select_best_mt5_files_dir(candidates: &[PathBuf]) -> Option<PathBuf> {
 
     let mut best: Option<(u64, PathBuf)> = None;
     for path in candidates {
-        let score = files_dir_activity_score(path);
+        let mut score = files_dir_activity_score(path);
+        let path_str = path.to_string_lossy().to_lowercase();
+        if path_str.contains("metaquotes") && path_str.contains("terminal") {
+            score += 200;
+        }
+        if (path_str.contains("program files") || path_str.contains("program files (x86)"))
+            && score < 1000
+        {
+            score = score.saturating_sub(50);
+        }
         match &best {
             Some((best_score, _)) if score <= *best_score => {}
             _ => best = Some((score, path.clone())),
@@ -558,5 +609,58 @@ pub fn which_cloudflared() -> Result<PathBuf, ()> {
             return Err(());
         }
         Ok(PathBuf::from(line))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn rejects_dashboard_url_as_path() {
+        assert!(is_invalid_mt5_files_override(
+            "https://tradeintelai.vercel.app/dashboard"
+        ));
+        assert!(normalize_mt5_files_dir("https://tradeintelai.vercel.app").is_none());
+    }
+
+    #[test]
+    fn experts_under_mql5_resolves_to_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let experts = dir.path().join("MQL5").join("Experts");
+        fs::create_dir_all(&experts).expect("create experts");
+        let raw = experts.to_string_lossy().to_string();
+        let norm = normalize_mt5_files_dir(&raw).expect("normalize");
+        assert!(ends_with_mql5_files(&norm));
+        assert!(norm.join("mt5-commands").exists() || norm.is_dir());
+    }
+
+    #[test]
+    fn mql5_files_path_unchanged() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let files = dir.path().join("MQL5").join("Files");
+        fs::create_dir_all(&files).expect("create files");
+        let raw = files.to_string_lossy().to_string();
+        let norm = normalize_mt5_files_dir(&raw).expect("normalize");
+        assert_eq!(norm, files);
+    }
+
+    #[test]
+    fn install_root_appends_mql5_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let install = dir.path().join("HFM Metatrader 5");
+        fs::create_dir_all(&install).expect("create install");
+        let raw = install.to_string_lossy().to_string();
+        let norm = normalize_mt5_files_dir(&raw).expect("normalize");
+        assert!(ends_with_mql5_files(&norm));
+    }
+
+    #[test]
+    fn path_looks_like_experts_detects_folder() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let experts = dir.path().join("MQL5").join("Experts");
+        fs::create_dir_all(&experts).expect("create");
+        assert!(path_looks_like_experts(&experts.to_string_lossy()));
     }
 }

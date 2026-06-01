@@ -1,6 +1,6 @@
 [package]
 name = "tradeintel-bridge-desktop"
-version = "1.0.1"
+version = "1.0.2"
 description = "TradeIntel AI MT5 Bridge Desktop"
 authors = ["TradeIntel AI"]
 edition = "2021"
@@ -17,6 +17,7 @@ tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-shell = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
@@ -25,6 +26,9 @@ parking_lot = "0.12"
 regex = "1"
 urlencoding = "2"
 arboard = "3"
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 panic = "abort"

@@ -20,8 +20,8 @@ This folder contains Windows launch scripts for the MT5 file-based HTTP bridge.
      `%APPDATA%\MetaQuotes\Terminal\<hash>\MQL5\Files` only after the first run.  
    - In MT5: **File → Open Data Folder** → open **`MQL5`** → **`Files`** (create **Files** if missing).  
    - Copy the full **Files** path from Explorer’s address bar — not Experts, not a dashboard URL.  
-   - **TradeIntel Bridge (desktop app):** Advanced → **MT5 Files path** → paste → **Save settings**, or use **Detect MT5 folder**.  
-   - Broker installs (e.g. **HFM MetaTrader 5**, **IC Markets**) still use the AppData Terminal folder after first launch; the app also scans `Program Files` for `*MetaTrader*` / `*mt5*` installs.  
+   - **TradeIntel Bridge (desktop app v1.0.2+):** click **Browse for MT5 folder** and select `MQL5\Files`, `MQL5\Experts` (e.g. `C:\Program Files\HFM Metatrader 5\MQL5\Experts`), or your Terminal data folder — or use **Detect MT5 folder**.  
+   - Broker installs (e.g. **HFM MetaTrader 5**) may use AppData after first launch; the app scans `Program Files` for broker MT5 folders and converts **Experts** → **Files** automatically.  
    - Copy **`mt5-bridge\MT5FileBridgeEA.mq5`** into MT5’s **Experts** folder (or use **Copy EA to Experts** in the app), compile in MetaEditor (**F7**), attach the EA to a chart, and enable **Algo Trading**.
 
 5. **Set MT5 file folder for the bridge** (PowerShell — use **your** path from “Open Data Folder”):  

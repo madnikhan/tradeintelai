@@ -317,6 +317,52 @@ button.small {
   color: #a5f3fc;
 }
 
+.candidate-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.candidate-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.candidate-btn:hover:not(:disabled) {
+  color: #a5f3fc;
+}
+
+.hfm-callout {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+}
+
+.path-warning {
+  font-size: 0.8rem;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fecaca;
+}
+
+.path-note {
+  color: #a5f3fc;
+  margin-top: 0.25rem;
+}
+
 .version-footer {
   text-align: center;
   margin-top: 0.5rem;

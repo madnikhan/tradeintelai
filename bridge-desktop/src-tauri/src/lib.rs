@@ -16,6 +16,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, RunEvent, State,
 };
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use tunnel_manager::{build_dashboard_url, TunnelManager};
 
@@ -114,6 +115,58 @@ fn detect_mt5_files_dir_cmd(state: State<AppState>) -> Result<Option<String>, St
     } else {
         Err(paths::MT5_FILES_NOT_FOUND_HELP.to_string())
     }
+}
+
+#[derive(serde::Serialize)]
+struct PickMt5FilesDirResult {
+    normalized_path: String,
+    converted_from_experts: bool,
+}
+
+#[tauri::command]
+fn pick_mt5_files_dir_cmd(app: AppHandle, state: State<AppState>) -> Result<PickMt5FilesDirResult, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Select MT5 folder (Files, Experts, MQL5, or data folder)")
+        .blocking_pick_folder();
+
+    let Some(folder) = picked else {
+        return Err("Folder selection cancelled.".to_string());
+    };
+
+    let raw = folder.to_string();
+    let converted_from_experts = paths::path_looks_like_experts(&raw);
+    let normalized = paths::normalize_mt5_files_dir(&raw).ok_or_else(|| {
+        format!(
+            "Could not use that folder. Choose your MT5 data folder (File → Open Data Folder), \
+             or the MQL5\\Files or MQL5\\Experts folder.\
+             \n\nSelected: {raw}"
+        )
+    })?;
+
+    let path_str = normalized.to_string_lossy().to_string();
+    let mut config = state.manager.get_config();
+    config.mt5_files_dir = Some(path_str.clone());
+    state.manager.update_config(config)?;
+
+    Ok(PickMt5FilesDirResult {
+        normalized_path: path_str,
+        converted_from_experts,
+    })
+}
+
+#[tauri::command]
+fn set_mt5_files_dir_cmd(state: State<AppState>, path: String) -> Result<String, String> {
+    let normalized = paths::normalize_mt5_files_dir(&path).ok_or_else(|| {
+        "Invalid MT5 path. Use a folder ending in MQL5\\Files, or pick Experts / MQL5 / install folder."
+            .to_string()
+    })?;
+    let path_str = normalized.to_string_lossy().to_string();
+    let mut config = state.manager.get_config();
+    config.mt5_files_dir = Some(path_str.clone());
+    state.manager.update_config(config)?;
+    Ok(path_str)
 }
 
 #[tauri::command]
@@ -455,6 +508,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![]),
         ))
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let res = resource_dir(&app.handle());
             clear_quarantine_on_bundled_binaries(&res);
@@ -494,6 +548,8 @@ pub fn run() {
             open_mt5_data_folder,
             list_mt5_files_candidates,
             detect_mt5_files_dir_cmd,
+            pick_mt5_files_dir_cmd,
+            set_mt5_files_dir_cmd,
             show_main_window,
             connect_dashboard,
         ])

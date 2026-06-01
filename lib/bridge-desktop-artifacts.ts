@@ -5,7 +5,7 @@ export type BridgePlatform = 'windows' | 'mac' | 'linux';
 export type MacArch = 'arm64' | 'x64';
 
 const LOCAL_DIR = path.join(process.cwd(), 'private', 'downloads', 'bridge-desktop');
-const DEFAULT_RELEASE_TAG = 'bridge-desktop-v1.0.1';
+const DEFAULT_RELEASE_TAG = 'bridge-desktop-v1.0.2';
 const DEFAULT_REPO = 'madnikhan/tradeintelai';
 
 export const CONTENT_TYPES: Record<BridgePlatform, string> = {

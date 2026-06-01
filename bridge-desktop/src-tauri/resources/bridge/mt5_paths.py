@@ -22,6 +22,23 @@ def is_invalid_mt5_files_override(path: str) -> bool:
     )
 
 
+def _ends_with_mql5_files(p: Path) -> bool:
+    path_str = str(p).lower().replace("\\", "/")
+    return path_str.endswith("mql5/files")
+
+
+def _segment_eq_ignore_case(p: Path, name: str) -> bool:
+    return p.name.lower() == name.lower()
+
+
+def path_looks_like_experts(path: str) -> bool:
+    trimmed = path.strip().strip('"').strip("'")
+    p = Path(os.path.abspath(os.path.expandvars(trimmed)))
+    return _segment_eq_ignore_case(p, "Experts") and (
+        p.parent is not None and _segment_eq_ignore_case(p.parent, "MQL5")
+    )
+
+
 def normalize_mt5_files_dir(path: str) -> Optional[str]:
     trimmed = path.strip().strip('"').strip("'")
     if not trimmed or is_invalid_mt5_files_override(trimmed):
@@ -32,22 +49,38 @@ def normalize_mt5_files_dir(path: str) -> Optional[str]:
     if name in ("mt5-commands", "mt5-responses"):
         p = p.parent
 
+    if _ends_with_mql5_files(p):
+        p.mkdir(parents=True, exist_ok=True)
+        return str(p) if p.is_dir() else None
+
+    if _segment_eq_ignore_case(p, "Experts") and p.parent and _segment_eq_ignore_case(
+        p.parent, "MQL5"
+    ):
+        files = p.parent / "Files"
+        files.mkdir(parents=True, exist_ok=True)
+        return str(files) if files.is_dir() else None
+
+    if _segment_eq_ignore_case(p, "MQL5"):
+        files = p / "Files"
+        files.mkdir(parents=True, exist_ok=True)
+        return str(files) if files.is_dir() else None
+
     path_str = str(p).lower().replace("\\", "/")
-    if path_str.endswith("mql5/files"):
-        return str(p)
-
-    if "metaquotes" in path_str and "terminal" in path_str:
+    if "metaquotes" in path_str and "terminal" in path_str and p.is_dir():
         with_mql5 = p / "MQL5" / "Files"
+        with_mql5.mkdir(parents=True, exist_ok=True)
         if with_mql5.is_dir():
             return str(with_mql5)
 
-    if "metatrader" in path_str and "mql5" not in path_str:
+    if (
+        ("metatrader" in path_str or "mt5" in path_str)
+        and "mql5/experts" not in path_str
+        and p.is_dir()
+    ):
         with_mql5 = p / "MQL5" / "Files"
+        with_mql5.mkdir(parents=True, exist_ok=True)
         if with_mql5.is_dir():
             return str(with_mql5)
-
-    if p.is_dir():
-        return str(p)
 
     return None
 
@@ -81,6 +114,11 @@ def _files_dir_activity_score(files_dir: Path) -> float:
         score += files_dir.stat().st_mtime
     except OSError:
         pass
+    path_str = str(files_dir).lower()
+    if "metaquotes" in path_str and "terminal" in path_str:
+        score += 200.0
+    if ("program files" in path_str) and score < 1000.0:
+        score = max(0.0, score - 50.0)
     return score
 
 
@@ -91,6 +129,25 @@ def _push_if_exists(candidates: List[str], path: Path) -> None:
             candidates.append(s)
 
 
+def _scan_program_files_for_mt5(candidates: List[str]) -> None:
+    if os.name != "nt":
+        return
+    for env_key in ("ProgramFiles", "ProgramFiles(x86)"):
+        root = os.environ.get(env_key)
+        if not root:
+            continue
+        root_path = Path(root)
+        try:
+            for entry in root_path.iterdir():
+                if not entry.is_dir():
+                    continue
+                name = entry.name.lower()
+                if "metatrader" in name or "mt5" in name:
+                    _push_if_exists(candidates, entry / "MQL5" / "Files")
+        except OSError:
+            pass
+
+
 def _terminal_hashes_files_dirs(terminal_root: Path) -> List[str]:
     out: List[str] = []
     if not terminal_root.is_dir():
@@ -99,6 +156,7 @@ def _terminal_hashes_files_dirs(terminal_root: Path) -> List[str]:
         for entry in terminal_root.iterdir():
             if entry.is_dir():
                 files = entry / "MQL5" / "Files"
+                files.mkdir(parents=True, exist_ok=True)
                 _push_if_exists(out, files)
     except OSError:
         pass
@@ -132,8 +190,9 @@ def collect_mt5_files_candidates() -> List[str]:
             terminal_root = Path(local) / "MetaQuotes" / "Terminal"
             for files in _terminal_hashes_files_dirs(terminal_root):
                 _push_if_exists(candidates, Path(files))
+
+        _scan_program_files_for_mt5(candidates)
     else:
-        # macOS MetaQuotes official Wine
         metaquotes = (
             home
             / "Library"

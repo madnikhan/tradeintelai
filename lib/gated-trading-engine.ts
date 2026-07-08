@@ -153,7 +153,8 @@ export class GatedTradingEngine {
   async analyzeMarket(
     symbol: string,
     openTrades: any[] = [],
-    chartImageBase64?: string
+    chartImageBase64?: string,
+    precomputedGptStructure?: GPTStructureAnalysis
   ): Promise<GatedMarketAnalysis> {
     // 🔒 DEBUG: Log chart image availability at entry
     console.log(`[GATED ENGINE] analyzeMarket called for ${symbol}, chartImageBase64: ${chartImageBase64 ? `YES (${chartImageBase64.length} chars)` : 'NO'}`);
@@ -173,10 +174,17 @@ export class GatedTradingEngine {
     const newsImpact = await this.getNewsImpact(symbol);
     
     // Get GPT structure analysis (reformed role)
-    // 🔒 DEBUG: Log before calling getGPTStructureAnalysis
-    this.debugLog.push(`[GATED ENGINE] Calling getGPTStructureAnalysis with chartImageBase64: ${chartImageBase64 ? `YES (${chartImageBase64.length} chars)` : 'NO'}`);
-    const gptStructure = await this.getGPTStructureAnalysis(symbol, chartImageBase64);
-    this.debugLog.push(`[GATED ENGINE] getGPTStructureAnalysis returned: ${gptStructure ? `YES (confidence: ${gptStructure.confidence}%, patterns: ${gptStructure.patterns?.length || 0}, S/R: support=[${gptStructure.supportResistance?.support?.join(', ') || 'none'}], resistance=[${gptStructure.supportResistance?.resistance?.join(', ') || 'none'}])` : 'NO'}`);
+    let gptStructure: GPTStructureAnalysis | undefined;
+    if (precomputedGptStructure) {
+      gptStructure = precomputedGptStructure;
+      this.debugLog.push(
+        `[GATED ENGINE] Using precomputed chart vision structure (confidence: ${gptStructure.confidence}%, patterns: ${gptStructure.patterns?.length || 0})`
+      );
+    } else {
+      this.debugLog.push(`[GATED ENGINE] Calling getGPTStructureAnalysis with chartImageBase64: ${chartImageBase64 ? `YES (${chartImageBase64.length} chars)` : 'NO'}`);
+      gptStructure = await this.getGPTStructureAnalysis(symbol, chartImageBase64);
+      this.debugLog.push(`[GATED ENGINE] getGPTStructureAnalysis returned: ${gptStructure ? `YES (confidence: ${gptStructure.confidence}%, patterns: ${gptStructure.patterns?.length || 0}, S/R: support=[${gptStructure.supportResistance?.support?.join(', ') || 'none'}], resistance=[${gptStructure.supportResistance?.resistance?.join(', ') || 'none'}])` : 'NO'}`);
+    }
     
     // ========================================================================
     // LAYER 1: MARKET READABILITY GATE (MANDATORY)

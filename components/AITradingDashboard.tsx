@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { MarketAnalysis } from '@/lib/ai-trading-engine';
 import { gatedEngineAdapter, ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
 import { executeGatedTrade } from '@/lib/execute-gated-trade';
@@ -12,6 +12,9 @@ import { useTradingContext } from '@/context/TradingContext';
 import { SymbolPicker } from '@/components/trading/SymbolPicker';
 import { AccordionItem } from '@/components/ui/Accordion';
 import { toCompactSymbol } from '@/lib/trading-symbols';
+import { getChartVisionCache } from '@/lib/chart-vision-cache';
+import type { ChartAnalysis } from '@/lib/ai-types';
+import type { GPTStructureAnalysis } from '@/lib/gated-trading-engine';
 
 interface AITradingDashboardProps {
   onAnalysisChange?: (analysis: MarketAnalysis | null) => void;
@@ -35,6 +38,8 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
   const [lastExecution, setLastExecution] = useState<any>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [usingCachedScan, setUsingCachedScan] = useState(false);
+  const [chartVisionApplied, setChartVisionApplied] = useState(false);
+  const visionRefreshRef = useRef<{ symbol: string; updatedAt: number } | null>(null);
 
   // Hydrate from TradingContext when opening from Scan tab
   useEffect(() => {
@@ -55,8 +60,11 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
     try {
       console.log(`🔍 Starting analysis for ${selectedSymbol} (chart: ${includeChart})...`);
 
-      // Default: same inputs as Opportunity Scanner (no chart) for consistent Gate 4
+      // Default: same inputs as Opportunity Scanner (no chart capture) unless vision cache exists
       let chartImageBase64: string | undefined;
+      let precomputedGptStructure: GPTStructureAnalysis | undefined;
+      const cachedVision = !includeChart ? getChartVisionCache(selectedSymbol) : undefined;
+
       if (includeChart) {
         try {
           const chartContainerId = `chart-container-${selectedSymbol}-1h`;
@@ -86,14 +94,22 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
         } catch (chartError) {
           console.error('Chart capture error:', chartError);
         }
+      } else if (cachedVision?.structure) {
+        precomputedGptStructure = cachedVision.structure;
+        console.log(
+          `📊 Using cached chart vision for Gate 1 (${cachedVision.structure.patterns?.length || 0} patterns, trend ${cachedVision.structure.trendStrength ?? 'n/a'}%)`
+        );
       }
 
       console.log(`📊 Analyzing ${selectedSymbol} with Gated Trading Engine...`);
-      console.log(`📊 Chart image provided: ${chartImageBase64 ? `YES (${chartImageBase64.length} chars)` : 'NO'}`);
+      console.log(
+        `📊 Chart image provided: ${chartImageBase64 ? `YES (${chartImageBase64.length} chars)` : 'NO'}; precomputed vision: ${precomputedGptStructure ? 'YES' : 'NO'}`
+      );
       const marketAnalysis = await gatedEngineAdapter.analyzeMarket(
         selectedSymbol,
         [],
-        chartImageBase64
+        chartImageBase64,
+        { precomputedGptStructure }
       );
       
       // 🔒 DEBUG: Log GPT structure from analysis
@@ -129,6 +145,7 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
       
       setAnalysis(marketAnalysis);
       setUsingCachedScan(false);
+      setChartVisionApplied(Boolean(precomputedGptStructure) || Boolean(includeChart && chartImageBase64));
       setAnalysisError(null);
       if (embedded) {
         setCtxAnalysis(marketAnalysis);
@@ -190,6 +207,48 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
     }
   }, [selectedSymbol, onAnalysisChange, embedded, setCtxAnalysis, onAnalyzingChange]);
 
+  const handleVisionComplete = useCallback(
+    (_analysis: ChartAnalysis, _imageBase64: string) => {
+      if (!embedded) return;
+
+      const cached = getChartVisionCache(selectedSymbol);
+      if (!cached?.structure) return;
+
+      if (
+        visionRefreshRef.current?.symbol === selectedSymbol &&
+        visionRefreshRef.current.updatedAt === cached.updatedAt
+      ) {
+        return;
+      }
+
+      const symKey = selectedSymbol.replace(/\//g, '').toUpperCase();
+      const ctxKey = ctxAnalysis?.symbol?.replace(/\//g, '').toUpperCase();
+      const currentAnalysis =
+        analysis ?? (ctxKey === symKey ? (ctxAnalysis as ExtendedMarketAnalysis | null) : null);
+
+      if (!currentAnalysis) return;
+
+      const gatePatternConf = currentAnalysis.gateStatus?.gate1Inputs?.patternConfidence ?? 0;
+      const visionPatternConf =
+        cached.structure.patterns?.length > 0
+          ? Math.max(...cached.structure.patterns.map((p) => p.confidence || 0))
+          : 0;
+
+      if (gatePatternConf >= 70 && visionPatternConf >= 70) {
+        return;
+      }
+
+      visionRefreshRef.current = { symbol: selectedSymbol, updatedAt: cached.updatedAt };
+      void analyzeMarket(false);
+    },
+    [embedded, selectedSymbol, analysis, ctxAnalysis, analyzeMarket]
+  );
+
+  useEffect(() => {
+    visionRefreshRef.current = null;
+    setChartVisionApplied(false);
+  }, [selectedSymbol]);
+
   // DISABLED: Automatic analysis to prevent OpenAI credit usage
   // Analysis now requires manual trigger via "Start AI Analysis" or "Re-analyze" button
   // useEffect(() => {
@@ -229,7 +288,7 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
       return (
         <div className="p-4">
           <p className="text-secondary text-sm mb-4">
-            Run AI analysis for {toCompactSymbol(selectedSymbol)} (same engine as Scan — no chart by default).
+            Run AI analysis for {toCompactSymbol(selectedSymbol)}. Chart vision feeds Gate 1 when the chart analysis completes.
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -462,6 +521,7 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
               ? parseFloat(analysis.detailedReasoning.risk[0].split('Current Price: ')[1]?.split(' ')[0] || '0')
               : undefined
             }
+            onVisionComplete={embedded ? handleVisionComplete : undefined}
           />
         </div>
 
@@ -483,9 +543,22 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
                 <p className="text-2xl sm:text-3xl md:text-4xl font-bold leading-tight">{analysis.recommendation}</p>
                 <p className="text-sm sm:text-base opacity-80 mt-2">Confidence: {analysis.confidence}%</p>
                 <p className="text-xs sm:text-sm opacity-60 mt-3 leading-relaxed">
-                  💡 Based on technical indicators, fundamentals, sentiment, COT, and regime analysis.
-                  <br className="hidden sm:block" />
-                  <span className="block sm:inline mt-1 sm:mt-0 text-yellow-300">Note: GPT-5.1&apos;s visual chart analysis (below) may differ as it analyzes chart patterns directly.</span>
+                  💡 Based on technical indicators, fundamentals, sentiment, COT, regime, and chart structure.
+                  {chartVisionApplied ? (
+                    <>
+                      <br className="hidden sm:block" />
+                      <span className="block sm:inline mt-1 sm:mt-0 text-emerald-300">
+                        Chart vision is included in Gate 1 structure assessment.
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <br className="hidden sm:block" />
+                      <span className="block sm:inline mt-1 sm:mt-0 text-yellow-300">
+                        Waiting for chart vision — Gate 1 uses indicators only until the chart analysis above completes.
+                      </span>
+                    </>
+                  )}
                 </p>
               </div>
               <div className="text-left sm:text-right">

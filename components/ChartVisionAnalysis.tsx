@@ -8,41 +8,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { analyzeChartImage, isAIConfigured, getActiveAIProviderLabel } from '@/lib/ai-service';
 import { captureRechartsChart } from '@/lib/chart-capture';
+import { setChartVisionCache, clearChartVisionCache } from '@/lib/chart-vision-cache';
+import type { ChartAnalysis } from '@/lib/ai-types';
 
 interface ChartVisionAnalysisProps {
   symbol: string;
   timeframe: string;
   chartContainerId: string;
   currentPrice?: number;
-}
-
-interface ChartAnalysis {
-  patterns: {
-    type: string;
-    confidence: number;
-    description: string;
-    priceLevel?: number;
-  }[];
-  supportResistance: {
-    support: number[];
-    resistance: number[];
-  };
-  trend: {
-    direction: 'bullish' | 'bearish' | 'neutral';
-    strength: number;
-    description: string;
-  };
-  candlestickPatterns: {
-    pattern: string;
-    location: string;
-    significance: string;
-  }[];
-  recommendation: string;
-  keyLevels: {
-    level: number;
-    type: 'support' | 'resistance' | 'breakout';
-    importance: 'high' | 'medium' | 'low';
-  }[];
+  onVisionComplete?: (analysis: ChartAnalysis, imageBase64: string) => void;
 }
 
 export function ChartVisionAnalysis({
@@ -50,6 +24,7 @@ export function ChartVisionAnalysis({
   timeframe,
   chartContainerId,
   currentPrice,
+  onVisionComplete,
 }: ChartVisionAnalysisProps) {
   const [analysis, setAnalysis] = useState<ChartAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
@@ -105,6 +80,8 @@ export function ChartVisionAnalysis({
       if (result) {
         setAnalysis(result);
         setProviderLabel(getActiveAIProviderLabel());
+        setChartVisionCache(symbol, result, imageBase64);
+        onVisionComplete?.(result, imageBase64);
       } else {
         setError('Failed to analyze chart');
       }
@@ -116,7 +93,12 @@ export function ChartVisionAnalysis({
       setLoading(false);
       setIsAnalyzing(false);
     }
-  }, [isConfigured, chartContainerId, symbol, timeframe, currentPrice]);
+  }, [isConfigured, chartContainerId, symbol, timeframe, currentPrice, onVisionComplete]);
+
+  useEffect(() => {
+    setAnalysis(null);
+    clearChartVisionCache(symbol);
+  }, [symbol, timeframe]);
 
   // Auto-analyze when chart is ready (with delay to ensure chart is fully rendered)
   useEffect(() => {

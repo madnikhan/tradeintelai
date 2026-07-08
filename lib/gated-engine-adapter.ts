@@ -5,7 +5,12 @@
  * Converts GatedMarketAnalysis to MarketAnalysis format for backward compatibility
  */
 
-import { GatedMarketAnalysis, GatedTradingEngine, MarketReadability } from './gated-trading-engine';
+import {
+  GatedMarketAnalysis,
+  GatedTradingEngine,
+  GPTStructureAnalysis,
+  MarketReadability,
+} from './gated-trading-engine';
 import { MarketAnalysis } from './ai-trading-engine';
 
 // Extended MarketAnalysis with gate information
@@ -70,10 +75,15 @@ export class GatedEngineAdapter {
   async analyzeMarket(
     symbol: string,
     openTrades: any[] = [],
-    chartImageBase64?: string
+    chartImageBase64?: string,
+    options?: { precomputedGptStructure?: GPTStructureAnalysis }
   ): Promise<ExtendedMarketAnalysis> {
-    // Get gated analysis
-    const gatedAnalysis = await this.gatedEngine.analyzeMarket(symbol, openTrades, chartImageBase64);
+    const gatedAnalysis = await this.gatedEngine.analyzeMarket(
+      symbol,
+      openTrades,
+      chartImageBase64,
+      options?.precomputedGptStructure
+    );
     
     // Convert to old format with gate information
     const legacy = this.convertToLegacyFormat(gatedAnalysis);
@@ -111,9 +121,15 @@ export class GatedEngineAdapter {
   async getGatedAnalysis(
     symbol: string,
     openTrades: any[] = [],
-    chartImageBase64?: string
+    chartImageBase64?: string,
+    options?: { precomputedGptStructure?: GPTStructureAnalysis }
   ): Promise<GatedMarketAnalysis> {
-    return await this.gatedEngine.analyzeMarket(symbol, openTrades, chartImageBase64);
+    return await this.gatedEngine.analyzeMarket(
+      symbol,
+      openTrades,
+      chartImageBase64,
+      options?.precomputedGptStructure
+    );
   }
   
   /**

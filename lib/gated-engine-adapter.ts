@@ -197,16 +197,15 @@ export class GatedEngineAdapter {
    * Calculate display score (for UI only, NOT for decisions)
    */
   private calculateDisplayScore(gated: GatedMarketAnalysis): number {
-    // This is just for visual display - gates make the decisions
-    if (gated.recommendation === 'HOLD') {
-      return 50; // Neutral display
+    // Display only — symmetric for BUY/SELL so scanner table reflects bias strength fairly
+    if (gated.recommendation === 'HOLD' || gated.directionalBias.direction === 'NEUTRAL') {
+      return 50;
     }
-    
-    // Convert bias to score for display
-    const baseScore = gated.directionalBias.direction === 'BULLISH' ? 60 : 40;
-    const strengthAdjustment = (gated.directionalBias.strength - 50) * 0.3;
-    
-    return Math.max(0, Math.min(100, baseScore + strengthAdjustment));
+
+    const directionSign = gated.directionalBias.direction === 'BEARISH' ? -1 : 1;
+    const strengthAdjustment = (gated.directionalBias.strength - 50) * 0.3 * directionSign;
+    const directionalBase = 50 + directionSign * 10;
+    return Math.max(0, Math.min(100, Math.round(directionalBase + strengthAdjustment)));
   }
   
   /**

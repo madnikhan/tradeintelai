@@ -18,6 +18,10 @@ import {
   getScanIntervalMinutes,
   migrateScanSettingsToManual,
 } from '@/lib/trading-settings';
+import {
+  isScannerExecutableOpportunity,
+  SCANNER_MIN_CONFIDENCE_GATE,
+} from '@/lib/scanner-executable';
 // API keys are now managed server-side via environment variables
 
 interface OpportunityScannerProps {
@@ -70,15 +74,8 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
   const [testingKeys, setTestingKeys] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; status?: number; error?: string }>>({});
 
-  // Executable opportunities: same gated engine as Trade tab (Gate 4 must pass)
-  const MIN_SCORE = 65;
-  const MIN_CONFIDENCE = 55;
-
-  const isExecutableOpportunity = (opp: Opportunity) =>
-    opp.executionPermitted &&
-    opp.recommendation !== 'HOLD' &&
-    opp.score >= MIN_SCORE &&
-    opp.confidence >= MIN_CONFIDENCE;
+  // Executable opportunities: same rules as Trade tab validateGatedExecution (gate path)
+  const isExecutableOpportunity = isScannerExecutableOpportunity;
 
   const openInTrade = (displaySymbol: string) => {
     const sym = displaySymbol.replace('/', '');
@@ -483,6 +480,11 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
   const validOpportunities = opportunities.filter(isExecutableOpportunity);
 
   const bestOpportunity = validOpportunities[0];
+
+  const nearMissOpportunities = [...opportunities]
+    .filter((o) => !isExecutableOpportunity(o))
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 3);
   
   // Show alert banner when strong signals are found
   const hasStrongSignals = validOpportunities.length > 0;
@@ -808,15 +810,37 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-6">
           <div className="flex items-start gap-3">
             <span className="text-2xl">⚠️</span>
-            <div>
-              <h3 className="text-amber-400 font-bold mb-2">No Strong Signals Found</h3>
+            <div className="flex-1">
+              <h3 className="text-amber-400 font-bold mb-2">No executable signals</h3>
               <p className="text-sm text-gray-400 mb-2">
-                Scanner uses the gated engine. Executable signals need Gate 4 pass (65+ score, 55%+ confidence, not HOLD).
+                Scan completed — {opportunities.length} pair{opportunities.length > 1 ? 's' : ''} analyzed.
+                Executable = Gate 4 passed, not HOLD, confidence ≥{SCANNER_MIN_CONFIDENCE_GATE}% (same as Trade tab).
               </p>
+              {nearMissOpportunities.length > 0 && (
+                <div className="mb-3 p-3 rounded-lg bg-[#141c2b] border border-[#1e2738]">
+                  <p className="text-xs text-gray-500 mb-2">Closest to executable (by confidence):</p>
+                  <ul className="text-sm text-gray-300 space-y-1.5">
+                    {nearMissOpportunities.map((opp) => (
+                      <li key={opp.symbol}>
+                        <span className="text-white font-medium">{opp.symbol}</span>
+                        {' — '}
+                        {opp.recommendation}, {opp.confidence}% conf
+                        {opp.executionBlockedBy.length > 0 ? (
+                          <span className="text-amber-400/90">
+                            {' '}
+                            · {opp.executionBlockedBy.slice(0, 2).join('; ')}
+                          </span>
+                        ) : !opp.executionPermitted ? (
+                          <span className="text-amber-400/90"> · Gate 4 blocked</span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <ul className="text-sm text-gray-400 space-y-1 list-disc list-inside">
-                <li>Only trade when Executable = Yes (Gate 4 passed — same rules as Trade tab)</li>
-                <li>Wait for the right setup - patience is key</li>
-                <li>Don&apos;t force trades - quality over quantity</li>
+                <li>Prime session liquidity does not bypass Gate 4 — structure and bias must align</li>
+                <li>See &quot;Blocked because&quot; column in the table below for each pair</li>
               </ul>
             </div>
           </div>
@@ -848,6 +872,11 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
           </span>
         </div>
         <p className="text-sm text-gray-400">{tradingHours.recommendation}</p>
+        {(tradingHours.quality === 'PRIME' || tradingHours.quality === 'GOOD') && (
+          <p className="text-xs text-gray-500 mt-2">
+            Prime liquidity does not bypass Gate 4 — signals still need clear structure, bias, and technical confirmation.
+          </p>
+        )}
       </div>
 
       {/* Best Opportunity */}
@@ -961,6 +990,7 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Pair</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Signal</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Executable</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Blocked because</th>
                   <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Score</th>
                   <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Confidence</th>
                   <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Strength</th>
@@ -1014,16 +1044,33 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
                           {opp.executionPermitted ? 'Yes' : 'No'}
                         </span>
                       </td>
+                      <td className="py-3 px-4 max-w-[220px]">
+                        {!isValid && opp.executionBlockedBy.length > 0 ? (
+                          <span className="text-xs text-amber-400/90 line-clamp-2">
+                            {opp.executionBlockedBy.slice(0, 2).join('; ')}
+                          </span>
+                        ) : !isValid && opp.recommendation === 'HOLD' ? (
+                          <span className="text-xs text-gray-500">HOLD — no directional setup</span>
+                        ) : !isValid && opp.confidence < SCANNER_MIN_CONFIDENCE_GATE ? (
+                          <span className="text-xs text-gray-500">
+                            Confidence {opp.confidence}% &lt; {SCANNER_MIN_CONFIDENCE_GATE}%
+                          </span>
+                        ) : isValid ? (
+                          <span className="text-xs text-emerald-400/80">—</span>
+                        ) : (
+                          <span className="text-xs text-gray-500">Gate 4 not passed</span>
+                        )}
+                      </td>
                       <td className="py-3 px-4 text-right">
                         <span className={`font-medium ${
-                          opp.score >= MIN_SCORE ? 'text-cyan-400' : 'text-gray-500'
+                          opp.score >= 65 ? 'text-cyan-400' : 'text-gray-500'
                         }`}>
                           {opp.score}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
                         <span className={`font-medium ${
-                          opp.confidence >= MIN_CONFIDENCE ? 'text-cyan-400' : 'text-gray-500'
+                          opp.confidence >= SCANNER_MIN_CONFIDENCE_GATE ? 'text-cyan-400' : 'text-gray-500'
                         }`}>
                           {opp.confidence}%
                         </span>
@@ -1080,7 +1127,7 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
         <EmptyState
           icon="🔍"
           title="No Opportunities Found"
-          description={`Click "Scan All Pairs" to analyze all ${TRADING_RULES.TRADING_PAIRS.length} currency pairs and find strong trading signals (65+ score, 55%+ confidence).`}
+          description='Click "Scan Now" to analyze your selected pairs. Executable signals need Gate 4 pass and confidence ≥50% (same rules as Trade tab).'
           action={{
             label: '🔍 Scan All Pairs',
             onClick: scanAllPairs,

@@ -16,6 +16,7 @@ import { TelegramConnectPanel } from '@/components/TelegramConnectPanel';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { isAlertModeEnabled, setAlertModeEnabled } from '@/lib/alert-mode-service';
 import { BridgePairingPanel } from '@/components/BridgePairingPanel';
+import Link from 'next/link';
 
 export function Settings() {
   const [riskPercentage, setRiskPercentage] = useState<number>(TRADING_RULES.RISK_PERCENTAGE * 100);

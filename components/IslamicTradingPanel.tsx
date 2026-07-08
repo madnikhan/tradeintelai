@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { IslamicTradingService, IslamicTradingConfig } from '@/lib/islamic-trading-service';
+import { updateBridgeWatchConfig } from '@/lib/bridge-watch-client';
 
 export function IslamicTradingPanel() {
   const [config, setConfig] = useState<IslamicTradingConfig>({
@@ -77,6 +78,15 @@ export function IslamicTradingPanel() {
     const newConfig = { ...config, ...updates };
     setConfig(newConfig);
     IslamicTradingService.updateConfig(updates);
+    void updateBridgeWatchConfig({
+      swap: {
+        enabled: newConfig.enabled,
+        swapTimeGMT: newConfig.swapTimeGMT,
+        closeBeforeHours: newConfig.closeBeforeHours,
+        autoCloseEnabled: newConfig.autoCloseEnabled,
+        warnBeforeHours: newConfig.warnBeforeHours,
+      },
+    });
   };
 
   const handleManualClose = async () => {
@@ -105,7 +115,7 @@ export function IslamicTradingPanel() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-xl font-bold text-white mb-1">🕌 Islamic Trading (Swap-Free)</h3>
-          <p className="text-sm text-gray-400">Auto-close positions before swap time to avoid haram interest</p>
+          <p className="text-sm text-gray-400">Swap-close runs on home bridge (works when browser is closed)</p>
         </div>
         <label className="relative inline-flex items-center cursor-pointer">
           <input

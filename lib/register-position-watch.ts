@@ -1,12 +1,16 @@
 /**
- * Register a successful trade with PositionWatchService (shared helper).
+ * Register a successful trade with bridge watchdog (preferred) or browser PositionWatch fallback.
  */
 
 import { PositionWatchService } from '@/lib/position-watch-service';
 import { gatedEngineAdapter } from '@/lib/gated-engine-adapter';
 import { formatPairForMT5 } from '@/config/trading-rules';
+import {
+  isBridgeWatchdogEnabled,
+  registerWatchOnBridge,
+} from '@/lib/bridge-watch-client';
 
-export function registerPositionWatch(params: {
+export async function registerPositionWatch(params: {
   symbol: string;
   direction: 'BUY' | 'SELL';
   entryPrice: number;
@@ -18,14 +22,32 @@ export function registerPositionWatch(params: {
   analysisId?: string;
   profile?: 'default' | 'scalp';
   takeProfitDollars?: number;
-}): void {
+}): Promise<void> {
   const symbol = formatPairForMT5(params.symbol);
   const analysisId =
-    params.analysisId ??
-    gatedEngineAdapter.getLastAnalysisId(symbol);
+    params.analysisId ?? gatedEngineAdapter.getLastAnalysisId(symbol);
+
+  const profile = params.profile ?? (params.source === 'scalp' ? 'scalp' : 'default');
+
+  if (isBridgeWatchdogEnabled() && params.ticket != null) {
+    const onBridge = await registerWatchOnBridge({
+      ticket: params.ticket,
+      symbol,
+      direction: params.direction,
+      entryPrice: params.entryPrice,
+      stopLoss: params.stopLoss,
+      takeProfit: params.takeProfit,
+      analysisId,
+      profile,
+      takeProfitDollars: params.takeProfitDollars,
+    });
+    if (onBridge) {
+      return;
+    }
+  }
 
   const configOverrides =
-    params.profile === 'scalp'
+    profile === 'scalp'
       ? {
           maxHoldMs: 30 * 60 * 1000,
           stallNearTpMs: 15 * 60 * 1000,

@@ -8,6 +8,8 @@ import { TradingModeManager } from '@/lib/trading-mode';
 import { notifyTradeExecutedClient } from '@/lib/notifications/client-notify';
 import { persistExecutedTrade } from '@/lib/trade-execution-persistence';
 import { gatedEngineAdapter } from '@/lib/gated-engine-adapter';
+import { assertCanTrade } from '@/lib/trade-permissions';
+import { fetchBridgeCredentials } from '@/lib/bridge-watch-client';
 import type { ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
 
 export interface ExecuteGatedTradeParams {
@@ -125,6 +127,13 @@ export async function executeGatedTrade(
     }
   }
 
+  const permission = await assertCanTrade();
+  if (!permission.allowed) {
+    return { success: false, error: permission.error ?? 'Trade not permitted' };
+  }
+
+  void fetchBridgeCredentials();
+
   const symbolNorm = symbol.replace(/\//g, '');
   const direction = analysis.recommendation.includes('BUY') ? 'BUY' : 'SELL';
 
@@ -141,7 +150,7 @@ export async function executeGatedTrade(
       const lots = Math.max(0.01, Math.min(analysis.suggestedPositionSize, 200));
       const orderId = result.order_id ?? result.orderId;
 
-      registerPositionWatch({
+      void registerPositionWatch({
         symbol: symbolNorm,
         direction,
         entryPrice: parseEntryPrice(analysis),

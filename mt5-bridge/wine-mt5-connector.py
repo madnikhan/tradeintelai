@@ -10,6 +10,16 @@ from socketserver import ThreadingMixIn
 
 from mt5_paths import resolve_mt5_files_base, normalize_mt5_files_dir
 
+try:
+    from bridge_auth import validate_authorization_header, auth_required
+    from bridge_watchdog import get_watchdog
+    from bridge_agent import start_bridge_agent
+    BRIDGE_WATCH_ENABLED = True
+except ImportError:
+    BRIDGE_WATCH_ENABLED = False
+    auth_required = lambda: False  # type: ignore
+    validate_authorization_header = lambda h: (True, '')  # type: ignore
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -637,6 +647,28 @@ def get_mt5_connector():
 class WineMT5HTTPHandler(BaseHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    def _path_only(self):
+        return self.path.split('?')[0]
+
+    def _read_json_body(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        if content_length <= 0:
+            return {}
+        post_data = self.rfile.read(content_length)
+        return json.loads(post_data.decode('utf-8'))
+
+    def _require_auth(self) -> bool:
+        if not BRIDGE_WATCH_ENABLED or not auth_required():
+            return True
+        ok, err = validate_authorization_header(self.headers.get('Authorization'))
+        if not ok:
+            self.send_json_response(401, {'success': False, 'error': err})
+            return False
+        return True
+
+    def _get_watchdog(self):
+        return get_watchdog(get_mt5_connector)
     
     def get_mt5_connector(self):
         """Lazy load MT5 connector only when needed"""
@@ -679,7 +711,7 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
                 self.send_header('Content-type', 'application/json')
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-                self.send_header('Access-Control-Allow-Headers', 'Content-Type, ngrok-skip-browser-warning, Cache-Control')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, ngrok-skip-browser-warning, Cache-Control')
                 self.send_header('Cache-Control', 'no-cache')
                 self.end_headers()
                 response = json.dumps(payload).encode('utf-8')
@@ -742,6 +774,20 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
                     "total_closed": len(closed_positions.get("positions", [])),
                 }
                 self.send_json_response(200, all_trades)
+            elif BRIDGE_WATCH_ENABLED and self._path_only() == '/watch/status':
+                if not self._require_auth():
+                    return
+                wd = self._get_watchdog()
+                self.send_json_response(200, {
+                    'success': True,
+                    'watches': wd.list_watches(),
+                    'config': wd.get_config(),
+                })
+            elif BRIDGE_WATCH_ENABLED and self._path_only() == '/watch/config':
+                if not self._require_auth():
+                    return
+                wd = self._get_watchdog()
+                self.send_json_response(200, {'success': True, 'config': wd.get_config()})
             else:
                 self.send_error(404, "Endpoint not found")
         except Exception as e:
@@ -749,7 +795,10 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
             self.send_json_response(500, {"success": False, "error": str(e)})
     
     def do_POST(self):
-        if self.path == '/trade':
+        path = self._path_only()
+        if path == '/trade':
+            if not self._require_auth():
+                return
             try:
                 content_length = int(self.headers['Content-Length'])
                 post_data = self.rfile.read(content_length)
@@ -770,10 +819,12 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 logger.error(f"Error in POST /trade: {e}")
                 self.send_json_response(500, {"success": False, "error": str(e)})
-        elif self.path.startswith('/close-position/'):
+        elif path.startswith('/close-position/'):
+            if not self._require_auth():
+                return
             try:
                 # Extract ticket from path: /close-position/{ticket}
-                ticket_str = self.path.split('/')[-1]
+                ticket_str = path.split('/')[-1]
                 try:
                     ticket = int(ticket_str)
                 except ValueError:
@@ -786,14 +837,51 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 logger.error(f"Error in POST /close-position: {e}")
                 self.send_json_response(500, {"success": False, "error": str(e)})
+        elif BRIDGE_WATCH_ENABLED and path == '/watch/register':
+            if not self._require_auth():
+                return
+            try:
+                body = self._read_json_body()
+                wd = self._get_watchdog()
+                watch = wd.register_watch(body)
+                self.send_json_response(200, {'success': True, 'watch': watch})
+            except Exception as e:
+                logger.error('Error in POST /watch/register: %s', e)
+                self.send_json_response(400, {'success': False, 'error': str(e)})
+        elif BRIDGE_WATCH_ENABLED and path == '/watch/config':
+            if not self._require_auth():
+                return
+            try:
+                body = self._read_json_body()
+                wd = self._get_watchdog()
+                config = wd.update_config(body)
+                self.send_json_response(200, {'success': True, 'config': config})
+            except Exception as e:
+                logger.error('Error in POST /watch/config: %s', e)
+                self.send_json_response(400, {'success': False, 'error': str(e)})
         else:
             self.send_error(404, "Endpoint not found")
+
+    def do_DELETE(self):
+        path = self._path_only()
+        if BRIDGE_WATCH_ENABLED and path.startswith('/watch/'):
+            if not self._require_auth():
+                return
+            ticket = path.split('/')[-1]
+            if ticket in ('watch', 'register', 'config', 'status'):
+                self.send_error(404, 'Ticket required')
+                return
+            wd = self._get_watchdog()
+            removed = wd.unregister_watch(ticket)
+            self.send_json_response(200, {'success': removed, 'ticket': ticket})
+            return
+        self.send_error(404, "Endpoint not found")
     
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, ngrok-skip-browser-warning, Cache-Control')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, ngrok-skip-browser-warning, Cache-Control')
         self.end_headers()
     
     def send_json_response(self, status_code, data):
@@ -802,7 +890,7 @@ class WineMT5HTTPHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-            self.send_header('Access-Control-Allow-Headers', 'Content-Type, ngrok-skip-browser-warning, Cache-Control')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, ngrok-skip-browser-warning, Cache-Control')
             self.end_headers()
             response_data = json.dumps(data).encode('utf-8')
             self.wfile.write(response_data)
@@ -855,6 +943,15 @@ def main():
             pass
     
     server = ThreadingHTTPServer(('localhost', port), WineMT5HTTPHandler)
+
+    if BRIDGE_WATCH_ENABLED:
+        try:
+            wd = get_watchdog(get_mt5_connector)
+            wd.start()
+            start_bridge_agent(get_mt5_connector)
+            logger.info('✅ Bridge watchdog + agent started')
+        except Exception as e:
+            logger.warning('⚠️  Bridge watchdog failed to start: %s', e)
     
     try:
         logger.info(f"📡 Server running on http://localhost:{port}")

@@ -203,7 +203,7 @@ export function TradePanel({ aiAnalysis: aiAnalysisProp, embedded = false }: Tra
             },
           }));
           if (result.success) {
-            registerPositionWatch({
+            void registerPositionWatch({
               symbol: selectedPair,
               direction,
               entryPrice: entry,
@@ -246,7 +246,7 @@ export function TradePanel({ aiAnalysis: aiAnalysisProp, embedded = false }: Tra
           },
         }));
         if (result.success) {
-          registerPositionWatch({
+          void registerPositionWatch({
             symbol: selectedPair,
             direction,
             entryPrice: entry,

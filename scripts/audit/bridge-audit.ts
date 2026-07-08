@@ -27,6 +27,18 @@ export async function runBridgeAudit(collector: AuditCollector, options: AuditOp
     return { count: Array.isArray(positions) ? positions.length : 0 };
   });
 
+  await collector.runTest(phase, category, 'Bridge /watch/status', async () => {
+    const res = await fetch(`${options.bridgeUrl}/watch/status`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (res.status === 401) {
+      return { watchdog: 'auth_required', note: 'Pair bridge for token auth' };
+    }
+    if (!res.ok) throw new Error(`watch/status HTTP ${res.status}`);
+    const data = await res.json();
+    return { watches: (data.watches ?? []).length, enabled: data.config?.enabled };
+  });
+
   if (options.liveTrade) {
     collector.skip(phase, category, 'Live demo trade', 'Use manual Phase 9 checklist — live trade requires UI confirmation');
   }

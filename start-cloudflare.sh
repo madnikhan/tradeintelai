@@ -71,6 +71,9 @@ fi
 if [ -n "$BRIDGE_URL" ]; then
     echo "🔗 Bridge URL: $BRIDGE_URL"
     echo ""
+    echo "💡 Pair with dashboard (Settings → Generate code):"
+    echo "   BRIDGE_PUBLIC_URL=$BRIDGE_URL npm run bridge:pair YOUR_CODE"
+    echo ""
     echo "💡 Update .env.local:"
     echo "   NEXT_PUBLIC_BRIDGE_URL=$BRIDGE_URL"
     echo ""

@@ -13,6 +13,7 @@ import {
 } from '@/lib/openai-circuit-breaker';
 import type { AIHealthReason } from '@/lib/ai-types';
 import { getAIProvider } from '@/lib/ai-settings';
+import { useBridgePresence } from '@/context/BridgeContext';
 
 const AUTH_BACKOFF_MS = 5 * 60 * 1000;
 const QUOTA_BACKOFF_MS = 2 * 60 * 1000;
@@ -29,6 +30,7 @@ export function SystemStatus() {
   const [systems, setSystems] = useState<SystemStatus[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const { state: homeBridgeState, loading: homeBridgeLoading } = useBridgePresence();
   const geminiBackoffRef = useRef<{ until: number; cached: SystemStatus | null }>({
     until: 0,
     cached: null,
@@ -394,9 +396,34 @@ export function SystemStatus() {
     ]);
 
     statuses.push(...allResults);
+
+    const homeLabels: Record<string, string> = {
+      online: 'Home bridge online',
+      online_ea_disconnected: 'Home bridge online (EA disconnected)',
+      offline: 'Home bridge offline',
+      not_paired: 'Home bridge not paired',
+      unknown: 'Home bridge unknown',
+    };
+    statuses.unshift({
+      id: 'home-bridge-presence',
+      name: 'Home Bridge',
+      status:
+        homeBridgeState === 'online'
+          ? 'online'
+          : homeBridgeState === 'online_ea_disconnected'
+            ? 'error'
+            : homeBridgeState === 'offline'
+              ? 'offline'
+              : homeBridgeLoading
+                ? 'checking'
+                : 'offline',
+      message: homeLabels[homeBridgeState] ?? homeLabels.unknown,
+      lastChecked: new Date(),
+    });
+
     setSystems(statuses);
     setIsChecking(false);
-  }, []);
+  }, [homeBridgeState, homeBridgeLoading]);
 
   // Check on mount and every 30 seconds
   useEffect(() => {

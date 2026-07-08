@@ -10,6 +10,7 @@ import { TRADING_RULES } from '@/config/trading-rules';
 import { TradingHoursFilter } from '@/lib/trading-hours';
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { EmptyState } from '@/components/EmptyState';
+import { BridgePresenceBanner } from '@/components/BridgePresenceBanner';
 import { TradeVerdictBanner } from '@/components/TradeVerdictBanner';
 // API keys are now managed server-side via environment variables
 
@@ -493,6 +494,9 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
 
   return (
     <div className="bg-[#0d1321] rounded-xl border border-[#1e2738] p-6">
+      <div className="mb-4">
+        <BridgePresenceBanner />
+      </div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-2xl font-bold text-white mb-1">🎯 Opportunity Scanner</h2>

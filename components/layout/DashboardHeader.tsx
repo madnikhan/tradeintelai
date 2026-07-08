@@ -78,7 +78,7 @@ export function DashboardHeader({
             <div className="hidden lg:block max-w-[200px]">
               <AccountSelector />
             </div>
-            <div className="hidden sm:block">
+            <div className="flex-shrink-0">
               <SystemStatus />
             </div>
             <AuthButton />

@@ -26,6 +26,8 @@ yarn-error.log*
 
 # mt5 bridge logs
 mt5-bridge/*.log
+mt5-bridge/data/bridge-credentials.json
+mt5-bridge/data/active-watches.json
 *.log
 !package.json
 !package-lock.json

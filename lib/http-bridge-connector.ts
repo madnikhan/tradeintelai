@@ -1,4 +1,5 @@
 import { BRIDGE_CONFIG, getBridgeUrl, retryWithBackoff } from '@/config/bridge-config';
+import { getCachedBridgeApiToken } from '@/lib/bridge-watch-client';
 import { logger } from '@/lib/logger';
 import { accountManager } from '@/lib/account-manager';
 
@@ -37,9 +38,12 @@ export class HTTPBridgeConnector {
    * Includes ngrok-skip-browser-warning for ngrok free tier
    */
   private getDefaultHeaders(): HeadersInit {
-    return {
-      'ngrok-skip-browser-warning': 'true', // Skip ngrok free tier browser warning
+    const headers: Record<string, string> = {
+      'ngrok-skip-browser-warning': 'true',
     };
+    const token = getCachedBridgeApiToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
   }
 
   async connect(): Promise<boolean> {

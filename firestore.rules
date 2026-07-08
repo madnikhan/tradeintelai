@@ -31,6 +31,23 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
+    match /users/{userId}/private/{docId} {
+      allow read, write: if false;
+    }
+
+    match /users/{userId}/bridgeAgent/{docId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    match /bridgePairingCodes/{code} {
+      allow read, write: if false;
+    }
+
+    match /bridgeTokens/{tokenHash} {
+      allow read, write: if false;
+    }
+
     match /users/{userId}/settings/{docId} {
       allow read, write: if isOwner(userId);
     }

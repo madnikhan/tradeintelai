@@ -15,7 +15,7 @@ import { MobileAlertsPanel } from '@/components/MobileAlertsPanel';
 import { TelegramConnectPanel } from '@/components/TelegramConnectPanel';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { isAlertModeEnabled, setAlertModeEnabled } from '@/lib/alert-mode-service';
-import Link from 'next/link';
+import { BridgePairingPanel } from '@/components/BridgePairingPanel';
 
 export function Settings() {
   const [riskPercentage, setRiskPercentage] = useState<number>(TRADING_RULES.RISK_PERCENTAGE * 100);
@@ -414,6 +414,7 @@ export function Settings() {
               />
               <p className="text-xs text-gray-500 mt-1">Saved on Save Settings. Used to connect your local MT5 bridge.</p>
             </div>
+            <BridgePairingPanel />
             <div className="border-t border-[#1e2738] pt-4">
               <label className="block text-sm text-gray-400 mb-2">Share account (Firebase UID)</label>
               <input

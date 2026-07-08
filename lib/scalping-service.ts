@@ -466,7 +466,7 @@ export class ScalpingService {
       logger.info(`✅ Scalping trade executed: ${symbol} ${direction} @ ${entryPrice}, TP: ${takeProfitPrice} (target: $${this.config.takeProfitAmount})`);
 
       const { registerPositionWatch } = await import('./register-position-watch');
-      registerPositionWatch({
+      void registerPositionWatch({
         symbol: scalpTrade.symbol,
         direction: scalpTrade.direction,
         entryPrice: scalpTrade.entryPrice,

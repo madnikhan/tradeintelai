@@ -10,15 +10,51 @@ import {
   DEFAULT_POSITION_WATCH_CONFIG,
   type PositionWatchConfig,
 } from '@/config/trading-rules';
+import {
+  getBridgeWatchStatus,
+  updateBridgeWatchConfig,
+  isBridgeWatchdogEnabled,
+} from '@/lib/bridge-watch-client';
+
+interface BridgeWatchRow {
+  ticket: string;
+  symbol: string;
+  direction: string;
+  status: string;
+  lastProfit: number;
+  lastDistanceToTpPercent: number;
+  openedAt?: string;
+}
 
 export function PositionWatchPanel() {
   const [watches, setWatches] = useState<WatchedPosition[]>([]);
+  const [bridgeWatches, setBridgeWatches] = useState<BridgeWatchRow[]>([]);
+  const [serverSide, setServerSide] = useState(false);
   const [config, setConfig] = useState<PositionWatchConfig>(PositionWatchService.getConfig());
   const [banner, setBanner] = useState<string | null>(null);
 
+  const refreshBridge = useCallback(async () => {
+    if (!isBridgeWatchdogEnabled()) return;
+    const status = await getBridgeWatchStatus();
+    if (status) {
+      setServerSide(true);
+      setBridgeWatches((status.watches as BridgeWatchRow[]) ?? []);
+      const cfg = status.config as Record<string, unknown>;
+      if (cfg && typeof cfg === 'object') {
+        setConfig((prev) => ({
+          ...prev,
+          enabled: cfg.enabled !== false,
+          smartExitEnabled: cfg.smartExitEnabled !== false,
+          maxHoldMs: Number(cfg.maxHoldMs) || prev.maxHoldMs,
+        }));
+      }
+    }
+  }, []);
+
   const refresh = useCallback(() => {
     setWatches(PositionWatchService.getWatches());
-  }, []);
+    void refreshBridge();
+  }, [refreshBridge]);
 
   useEffect(() => {
     refresh();
@@ -30,24 +66,51 @@ export function PositionWatchPanel() {
         setTimeout(() => setBanner(null), 12000);
       }
     });
-    PositionWatchService.startPolling();
+    if (!isBridgeWatchdogEnabled()) {
+      PositionWatchService.startPolling();
+    }
+    const interval = setInterval(() => void refreshBridge(), 10000);
     return () => {
       unsub();
+      clearInterval(interval);
     };
-  }, [refresh]);
+  }, [refresh, refreshBridge]);
 
   const updateConfig = (partial: Partial<PositionWatchConfig>) => {
     const next = { ...config, ...partial };
     setConfig(next);
     PositionWatchService.configure(next);
+    void updateBridgeWatchConfig({
+      enabled: next.enabled,
+      smartExitEnabled: next.smartExitEnabled,
+      maxHoldMs: next.maxHoldMs,
+      stallNearTpMs: next.stallNearTpMs,
+      givebackFraction: next.givebackFraction,
+      lossExtension: next.lossExtension,
+      signalRecheckEnabled: next.signalRecheckEnabled,
+    });
   };
 
-  const formatDuration = (openedAt: Date) => {
-    const ms = Date.now() - openedAt.getTime();
+  const formatDuration = (openedAt: Date | string) => {
+    const d = openedAt instanceof Date ? openedAt : new Date(openedAt);
+    const ms = Date.now() - d.getTime();
     const m = Math.floor(ms / 60000);
     if (m < 60) return `${m}m`;
     return `${Math.floor(m / 60)}h ${m % 60}m`;
   };
+
+  const displayWatches =
+    serverSide && bridgeWatches.length > 0
+      ? bridgeWatches
+      : watches.map((w) => ({
+          ticket: String(w.ticket ?? ''),
+          symbol: w.symbol,
+          direction: w.direction,
+          status: w.status,
+          lastProfit: w.lastProfit,
+          lastDistanceToTpPercent: w.lastDistanceToTpPercent,
+          openedAt: w.openedAt.toISOString(),
+        }));
 
   return (
     <div className="card border-cyan-500/20 animate-fade-in">
@@ -55,7 +118,9 @@ export function PositionWatchPanel() {
         <h3 className="text-lg font-bold flex items-center gap-2 text-cyan-400">
           <span>👁</span> Open Trade Monitor
         </h3>
-        <span className="text-xs text-gray-500">Active while dashboard is open</span>
+        <span className="text-xs text-gray-500">
+          {serverSide ? 'Server-side on home bridge' : 'Browser fallback (dashboard open)'}
+        </span>
       </div>
 
       {banner && (
@@ -83,20 +148,11 @@ export function PositionWatchPanel() {
           />
           <span className="text-gray-400">Smart exit</span>
         </label>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={config.signalRecheckEnabled}
-            onChange={(e) => updateConfig({ signalRecheckEnabled: e.target.checked })}
-            className="rounded"
-          />
-          <span className="text-gray-400">Signal re-check</span>
-        </label>
       </div>
 
-      {watches.length === 0 ? (
+      {displayWatches.length === 0 ? (
         <p className="text-gray-500 text-sm py-4 text-center">
-          No watched positions. Trades register here after successful execution.
+          No watched positions. Trades register on the home bridge after execution.
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -112,13 +168,15 @@ export function PositionWatchPanel() {
               </tr>
             </thead>
             <tbody>
-              {watches.map((w) => (
-                <tr key={w.id} className="border-b border-[#1e2738]/50">
+              {displayWatches.map((w) => (
+                <tr key={w.ticket || w.symbol} className="border-b border-[#1e2738]/50">
                   <td className="py-2 pr-2 font-mono">
                     {w.direction} {w.symbol}
                   </td>
-                  <td className="py-2 pr-2 text-gray-400">{w.ticket ?? '—'}</td>
-                  <td className="py-2 pr-2">{formatDuration(w.openedAt)}</td>
+                  <td className="py-2 pr-2 text-gray-400">{w.ticket || '—'}</td>
+                  <td className="py-2 pr-2">
+                    {w.openedAt ? formatDuration(w.openedAt) : '—'}
+                  </td>
                   <td className="py-2 pr-2">
                     <span
                       className={
@@ -127,7 +185,7 @@ export function PositionWatchPanel() {
                           : 'text-gray-300'
                       }
                     >
-                      {w.lastDistanceToTpPercent.toFixed(0)}%
+                      {w.lastDistanceToTpPercent?.toFixed?.(0) ?? '—'}%
                     </span>
                   </td>
                   <td
@@ -136,7 +194,7 @@ export function PositionWatchPanel() {
                     }`}
                   >
                     {w.lastProfit >= 0 ? '+' : ''}
-                    {w.lastProfit.toFixed(2)}
+                    {(w.lastProfit ?? 0).toFixed(2)}
                   </td>
                   <td className="py-2 text-xs text-cyan-400/80">{w.status}</td>
                 </tr>
@@ -147,9 +205,7 @@ export function PositionWatchPanel() {
       )}
 
       <p className="text-[10px] text-gray-600 mt-3">
-        Defaults: max hold {Math.round(DEFAULT_POSITION_WATCH_CONFIG.maxHoldMs / 3600000)}h,
-        stall near TP {Math.round(DEFAULT_POSITION_WATCH_CONFIG.stallNearTpMs / 3600000)}h.
-        Scalp trades use a 30m profile.
+        Monitoring runs on your home laptop bridge — works even when this browser tab is closed.
       </p>
     </div>
   );

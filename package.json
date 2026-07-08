@@ -24,7 +24,9 @@
     "audit:full": "npx tsx scripts/run-full-audit.ts",
     "audit:quick": "npx tsx scripts/run-full-audit.ts --skip-backtest --skip-gpt",
     "readiness:audit": "npx tsx scripts/run-production-readiness-audit.ts",
-    "readiness:demo": "npx tsx scripts/check-demo-readiness.ts"
+    "readiness:demo": "npx tsx scripts/check-demo-readiness.ts",
+    "bridge:pair": "python3 mt5-bridge/bridge-pair.py",
+    "test:bridge-watchdog": "npx tsx scripts/test-bridge-watchdog.ts"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.0",

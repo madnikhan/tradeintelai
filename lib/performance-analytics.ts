@@ -26,6 +26,23 @@ export interface AdvancedPerformanceMetrics extends PerformanceMetrics {
 }
 
 export class PerformanceAnalytics {
+  /** Use MT5 balance when config initialBalance is 0 (demo mode). */
+  static resolveInitialBalance(
+    initialBalance: number,
+    currentBalance: number,
+    trades: Trade[]
+  ): number {
+    if (initialBalance > 0) return initialBalance;
+    const closedPnl = trades
+      .filter((t) => t.status === 'closed')
+      .reduce((sum, t) => sum + (t.profitLoss || 0), 0);
+    if (currentBalance > 0) {
+      const inferred = currentBalance - closedPnl;
+      return inferred > 0 ? inferred : currentBalance;
+    }
+    return Math.max(closedPnl, 1);
+  }
+
   /**
    * Calculate advanced performance metrics
    */
@@ -34,6 +51,7 @@ export class PerformanceAnalytics {
     initialBalance: number,
     currentBalance: number
   ): AdvancedPerformanceMetrics {
+    const baseline = this.resolveInitialBalance(initialBalance, currentBalance, trades);
     const closedTrades = trades.filter(t => t.status === 'closed' && t.profitLoss !== undefined);
     
     if (closedTrades.length === 0) {
@@ -53,10 +71,10 @@ export class PerformanceAnalytics {
     const profitFactor = totalLosses > 0 ? totalWins / totalLosses : totalWins > 0 ? 999 : 0;
 
     // Calculate drawdown
-    const { maxDrawdown, maxDrawdownPercent } = this.calculateDrawdown(trades, initialBalance);
+    const { maxDrawdown, maxDrawdownPercent } = this.calculateDrawdown(trades, baseline);
 
     // Calculate returns
-    const returns = this.calculateReturns(trades, initialBalance);
+    const returns = this.calculateReturns(trades, baseline);
     const monthlyReturns = this.groupReturnsByMonth(returns);
     const weeklyReturns = this.groupReturnsByWeek(returns);
 
@@ -116,7 +134,7 @@ export class PerformanceAnalytics {
         }
         
         const drawdown = peak - balance;
-        const drawdownPercent = (drawdown / peak) * 100;
+        const drawdownPercent = peak > 0 ? (drawdown / peak) * 100 : 0;
         
         if (drawdown > maxDrawdown) {
           maxDrawdown = drawdown;
@@ -138,7 +156,7 @@ export class PerformanceAnalytics {
     for (const trade of trades) {
       if (trade.status === 'closed' && trade.profitLoss !== undefined) {
         balance += trade.profitLoss;
-        const returnPercent = (trade.profitLoss / initialBalance) * 100;
+        const returnPercent = initialBalance > 0 ? (trade.profitLoss / initialBalance) * 100 : 0;
         returns.push({
           date: trade.timestamp,
           return: returnPercent

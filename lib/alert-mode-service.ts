@@ -94,3 +94,14 @@ export function isAlertModeEnabled(): boolean {
 export function setAlertModeEnabled(enabled: boolean): void {
   localStorage.setItem(ALERT_MODE_KEY, enabled ? 'true' : 'false');
 }
+
+const ALERT_MODE_CONFIRM_MESSAGE =
+  'Alert Mode runs an AI scan every 5 minutes while this dashboard tab is open. This uses OpenAI/Gemini credits. Enable anyway?';
+
+/** Enable only after explicit user confirmation (credit warning). */
+export function requestAlertModeEnable(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (!window.confirm(ALERT_MODE_CONFIRM_MESSAGE)) return false;
+  setAlertModeEnabled(true);
+  return true;
+}

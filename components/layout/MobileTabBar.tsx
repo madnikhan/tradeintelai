@@ -13,7 +13,7 @@ export const PRIMARY_TABS: PrimaryTab[] = [
   { id: 'trade', label: 'Trade', shortLabel: 'Trade', icon: '💹' },
   { id: 'scan', label: 'Scan', shortLabel: 'Scan', icon: '🔍' },
   { id: 'performance', label: 'Performance', shortLabel: 'Perf', icon: '📈' },
-  { id: 'settings', label: 'Settings', shortLabel: 'Settings', icon: '⚙️' },
+  { id: 'settings', label: 'Setup', shortLabel: 'Setup', icon: '⚙️' },
 ];
 
 interface MobileTabBarProps {

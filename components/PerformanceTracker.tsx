@@ -15,6 +15,11 @@ interface PerformanceTrackerProps {
 }
 
 export default function PerformanceTracker({ mode, config, trades = [], currentBalance }: PerformanceTrackerProps) {
+  const effectiveBaseline =
+    trades.length > 0 && currentBalance
+      ? PerformanceAnalytics.resolveInitialBalance(config.initialBalance, currentBalance, trades)
+      : config.initialBalance;
+
   // Calculate advanced metrics if trades provided
   const performance: PerformanceMetrics = trades.length > 0 && currentBalance
     ? PerformanceAnalytics.calculateAdvancedMetrics(trades, config.initialBalance, currentBalance)
@@ -31,10 +36,15 @@ export default function PerformanceTracker({ mode, config, trades = [], currentB
       }
 
   const losingTrades = performance.totalTrades - performance.winningTrades
-  const targetAmount = config.initialBalance * config.monthlyTarget
+  const targetAmount = effectiveBaseline * config.monthlyTarget
   const progressPercentage = targetAmount > 0 
     ? Math.min((performance.totalProfit / targetAmount) * 100, 100)
     : 0
+
+  const drawdownDisplay =
+    'maxDrawdownPercent' in performance && typeof performance.maxDrawdownPercent === 'number'
+      ? Math.min(performance.maxDrawdownPercent, 100)
+      : Math.min((performance.maxDrawdown / Math.max(effectiveBaseline, 1)) * 100, 100);
 
   return (
     <div className="p-5">
@@ -82,7 +92,7 @@ export default function PerformanceTracker({ mode, config, trades = [], currentB
           </div>
           <p className="text-xs text-gray-600 mt-1">
             Target: {(config.monthlyTarget * 100).toFixed(0)}% (
-            {(config.initialBalance * config.monthlyTarget).toFixed(2)} {config.currency})
+            {(effectiveBaseline * config.monthlyTarget).toFixed(2)} {config.currency})
           </p>
         </div>
 
@@ -134,7 +144,7 @@ export default function PerformanceTracker({ mode, config, trades = [], currentB
             <div className="flex justify-between">
               <span className="text-sm text-gray-600">Max Drawdown</span>
               <span className="text-lg font-bold text-red-500">
-                {(performance.maxDrawdown * 100).toFixed(2)}%
+                {drawdownDisplay.toFixed(2)}%
               </span>
             </div>
             <div className="flex justify-between">
@@ -186,7 +196,7 @@ export default function PerformanceTracker({ mode, config, trades = [], currentB
                       performance.calmarRatio > 1 ? 'text-green-500' :
                       performance.calmarRatio > 0 ? 'text-yellow-500' : 'text-red-500'
                     }`}>
-                      {performance.calmarRatio.toFixed(2)}
+                      {!Number.isFinite(performance.calmarRatio) ? 'N/A' : performance.calmarRatio.toFixed(2)}
                     </span>
                   </div>
                 </MetricTooltip>
@@ -251,7 +261,7 @@ export default function PerformanceTracker({ mode, config, trades = [], currentB
         <div className="mt-6">
           <PerformanceChart 
             trades={trades} 
-            initialBalance={config.initialBalance}
+            initialBalance={effectiveBaseline}
             currentBalance={currentBalance}
           />
         </div>

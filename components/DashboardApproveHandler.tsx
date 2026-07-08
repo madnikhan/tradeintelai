@@ -9,7 +9,7 @@ import { useAlertModeService } from '@/lib/alert-mode-service';
 import { useTradingContext } from '@/context/TradingContext';
 
 interface DashboardApproveHandlerProps {
-  onTabChange: (tab: 'trade' | 'scan') => void;
+  onTabChange: (tab: 'trade' | 'scan' | 'performance' | 'settings') => void;
 }
 
 export function DashboardApproveHandler({ onTabChange }: DashboardApproveHandlerProps) {
@@ -29,7 +29,7 @@ export function DashboardApproveHandler({ onTabChange }: DashboardApproveHandler
     const approve = searchParams.get('approve');
     const symbolParam = searchParams.get('symbol');
     const tab = searchParams.get('tab');
-    if (tab === 'scan' || tab === 'trade') {
+    if (tab === 'scan' || tab === 'trade' || tab === 'performance' || tab === 'settings') {
       onTabChange(tab);
     }
     if (!symbolParam || approve !== '1') return;

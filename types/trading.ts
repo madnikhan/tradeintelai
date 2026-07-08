@@ -107,6 +107,7 @@ export interface PerformanceMetrics {
   winRate: number;
   totalProfit: number;
   maxDrawdown: number;
+  maxDrawdownPercent?: number;
   profitFactor: number;
   averageWin: number;
   averageLoss: number;

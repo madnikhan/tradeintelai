@@ -9,6 +9,7 @@ import { loadUserBridgeSettings } from '@/lib/firebase/user-bridge-settings';
 export function AccountSelector() {
   const [accounts, setAccounts] = useState<MT5Account[]>([]);
   const [activeAccount, setActiveAccount] = useState<MT5Account | null>(null);
+  const [bridgeConnected, setBridgeConnected] = useState<boolean | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [newAccount, setNewAccount] = useState({
@@ -23,6 +24,12 @@ export function AccountSelector() {
       await loadUserBridgeSettings();
       await accountManager.syncFromFirestore();
       loadAccounts();
+      try {
+        const info = await httpBridge.getAccountInfo();
+        setBridgeConnected(Boolean(info.success));
+      } catch {
+        setBridgeConnected(false);
+      }
     })();
   }, []);
 
@@ -110,6 +117,7 @@ export function AccountSelector() {
     try {
       const accountInfo = await httpBridge.getAccountInfo();
       if (accountInfo.success && accountInfo.login) {
+        setBridgeConnected(true);
         accountManager.updateAccountData(accountInfo.login, {
           balance: accountInfo.balance,
           equity: accountInfo.equity,
@@ -144,6 +152,7 @@ export function AccountSelector() {
         loadAccounts();
       }
     } catch (error) {
+      setBridgeConnected(false);
       console.error('Failed to refresh account data:', error);
     }
   };
@@ -157,6 +166,14 @@ export function AccountSelector() {
     }
   }, [activeAccount?.id]);
 
+  const headerLabel = activeAccount
+    ? activeAccount.name
+    : bridgeConnected
+      ? 'MT5 Connected'
+      : bridgeConnected === false
+        ? 'Bridge offline'
+        : 'Checking…';
+
   return (
     <>
       {/* Account Selector Button - Simplified on mobile */}
@@ -164,11 +181,11 @@ export function AccountSelector() {
         <button
           onClick={() => setShowModal(!showModal)}
           className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg bg-[#141c2b] border border-[#1e2738] text-white hover:bg-[#1e2738] transition-all text-sm touch-manipulation"
-          title={activeAccount ? `${activeAccount.name} (${activeAccount.login})` : 'Select Account'}
+          title={activeAccount ? `${activeAccount.name} (${activeAccount.login})` : headerLabel}
         >
           <span className="text-base sm:text-lg">👤</span>
           <span className="hidden lg:inline">
-            {activeAccount ? activeAccount.name : 'No Account'}
+            {headerLabel}
           </span>
           {activeAccount && (
             <span className="hidden xl:inline text-xs text-gray-400">

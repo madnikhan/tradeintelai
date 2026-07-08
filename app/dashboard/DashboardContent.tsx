@@ -12,7 +12,7 @@ import { TradingModeManager } from '@/lib/trading-mode'
 import { httpBridge } from '@/lib/http-bridge-connector'
 import { TRADING_RULES } from '@/config/trading-rules'
 import { getTradingConfig } from '@/lib/trading-mode'
-import { getMaxTradesPerDay, getMaxOpenTrades, getDailyLossPercent } from '@/lib/trading-settings'
+import { getMaxTradesPerDay, getMaxOpenTrades, getDailyLossPercent, migrateScanSettingsToManual } from '@/lib/trading-settings'
 import { Trade, Account } from '@/types/trading'
 import { TradingHoursFilter } from '@/lib/trading-hours'
 import { SmartScoreCard } from '@/components/SmartScoreCard'
@@ -56,18 +56,6 @@ const AccuracyDashboard = dynamic(
   () => import('@/components/AccuracyDashboard').then((m) => ({ default: m.AccuracyDashboard })),
   { loading: tabPanelFallback, ssr: false }
 )
-const HealthCheckDashboard = dynamic(
-  () => import('@/components/HealthCheckDashboard').then((m) => ({ default: m.HealthCheckDashboard })),
-  { loading: tabPanelFallback, ssr: false }
-)
-const IslamicTradingPanel = dynamic(
-  () => import('@/components/IslamicTradingPanel').then((m) => ({ default: m.IslamicTradingPanel })),
-  { loading: tabPanelFallback, ssr: false }
-)
-const ScalpingPanel = dynamic(
-  () => import('@/components/ScalpingPanel').then((m) => ({ default: m.ScalpingPanel })),
-  { loading: tabPanelFallback, ssr: false }
-)
 
 // Initial empty state - Will be loaded from MT5
 const emptyAccount: Account = {
@@ -99,6 +87,10 @@ export default function DashboardContent() {
   const [sidebarOpen, setSidebarOpen] = useState(false) // Mobile sidebar
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false) // Desktop sidebar collapse
   const mainContentRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    migrateScanSettingsToManual()
+  }, [])
 
   // Swipe between primary tabs on mobile
   useEffect(() => {
@@ -609,7 +601,7 @@ export default function DashboardContent() {
       { key: '1', handler: () => setActiveTab('trade'), description: 'Go to Trade' },
       { key: '2', handler: () => setActiveTab('scan'), description: 'Go to Scan' },
       { key: '3', handler: () => setActiveTab('performance'), description: 'Go to Performance' },
-      { key: '4', handler: () => setActiveTab('settings'), description: 'Go to Settings' },
+      { key: '4', handler: () => setActiveTab('settings'), description: 'Go to Setup' },
       { key: 's', ctrl: true, handler: syncTrades, description: 'Sync Trades' },
       { key: 'f', ctrl: true, handler: toggleFullscreen, description: 'Toggle Fullscreen' },
       { key: 'b', ctrl: true, handler: () => setSidebarCollapsed(!sidebarCollapsed), description: 'Toggle Sidebar' },
@@ -916,14 +908,16 @@ export default function DashboardContent() {
             <div className="hidden md:block mb-4">
               <Breadcrumbs items={getBreadcrumbs()} />
             </div>
-            <AccountStatsBar
-              account={account}
-              isLoadingBalance={isLoadingBalance}
-              isLoadingTrades={isLoadingTrades}
-              isRefreshingBalance={isRefreshingBalance}
-              onSyncTrades={syncTrades}
-              isSyncing={isLoadingTrades}
-            />
+            {activeTab !== 'settings' && (
+              <AccountStatsBar
+                account={account}
+                isLoadingBalance={isLoadingBalance}
+                isLoadingTrades={isLoadingTrades}
+                isRefreshingBalance={isRefreshingBalance}
+                onSyncTrades={syncTrades}
+                isSyncing={isLoadingTrades}
+              />
+            )}
 
             <BridgeSetupBanner />
 
@@ -953,25 +947,8 @@ export default function DashboardContent() {
 
         {activeTab === 'settings' && (
           <div className="max-w-7xl mx-auto">
-            <div className="space-y-4 sm:space-y-6">
-              <div className="card animate-fade-in overflow-hidden">
-                <Settings />
-              </div>
-                  
-              {/* Islamic Trading Panel */}
-              <div className="card animate-fade-in overflow-hidden">
-                <IslamicTradingPanel />
-              </div>
-
-              {/* Scalping Panel */}
-              <div className="card animate-fade-in overflow-hidden">
-                <ScalpingPanel />
-              </div>
-                  
-              {/* Health Check Dashboard */}
-              <div className="card animate-fade-in">
-                <HealthCheckDashboard />
-              </div>
+            <div className="card animate-fade-in overflow-hidden">
+              <Settings />
             </div>
           </div>
         )}

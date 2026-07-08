@@ -18,14 +18,24 @@ export function PerformanceChart({ trades, initialBalance, currentBalance }: Per
     );
   }
 
-  // Calculate equity curve (cumulative P/L over time)
-  const equityData: Array<{ date: string; equity: number; pnl: number }> = [];
-  let runningEquity = initialBalance;
-
   // Sort trades by timestamp
   const sortedTrades = [...trades].sort((a, b) => 
     new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
+
+  // Calculate equity curve (cumulative P/L over time)
+  const equityData: Array<{ date: string; equity: number; pnl: number }> = [];
+  const baseline =
+    initialBalance > 0
+      ? initialBalance
+      : Math.max(
+          currentBalance -
+            sortedTrades
+              .filter((t) => t.status === 'closed')
+              .reduce((sum, t) => sum + (t.profitLoss || 0), 0),
+          1
+        );
+  let runningEquity = baseline;
 
   sortedTrades.forEach((trade) => {
     if (trade.status === 'closed') {
@@ -43,7 +53,7 @@ export function PerformanceChart({ trades, initialBalance, currentBalance }: Per
     equityData.push({
       date: 'Now',
       equity: currentBalance,
-      pnl: currentBalance - initialBalance,
+      pnl: currentBalance - baseline,
     });
   }
 

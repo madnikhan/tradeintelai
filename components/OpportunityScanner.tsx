@@ -12,6 +12,12 @@ import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { BridgePresenceBanner } from '@/components/BridgePresenceBanner';
 import { TradeVerdictBanner } from '@/components/TradeVerdictBanner';
+import {
+  getAutoScanEnabled,
+  setAutoScanEnabled,
+  getScanIntervalMinutes,
+  migrateScanSettingsToManual,
+} from '@/lib/trading-settings';
 // API keys are now managed server-side via environment variables
 
 interface OpportunityScannerProps {
@@ -49,7 +55,7 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
   const [scanProgress, setScanProgress] = useState(0);
   const [tradingHours, setTradingHours] = useState(TradingHoursFilter.analyze());
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
-  const [autoScanEnabled, setAutoScanEnabled] = useState(true);
+  const [autoScanEnabled, setAutoScanEnabledState] = useState(false);
   const [scanCountdown, setScanCountdown] = useState(0);
   const [notificationPermission, setNotificationPermission] = useState<'default' | 'granted' | 'denied' | 'unknown'>('unknown');
   const [isClient, setIsClient] = useState(false);
@@ -284,6 +290,11 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
   // Check if we're on the client side
   useEffect(() => {
     setIsClient(true);
+    migrateScanSettingsToManual();
+    setAutoScanEnabledState(getAutoScanEnabled());
+
+    const onScanSettingsChanged = () => setAutoScanEnabledState(getAutoScanEnabled());
+    window.addEventListener('scan-settings-changed', onScanSettingsChanged);
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setNotificationPermission(Notification.permission);
     }
@@ -295,6 +306,7 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
     }
     
     return () => {
+      window.removeEventListener('scan-settings-changed', onScanSettingsChanged);
       // Cleanup: stop any playing alarms
       if (alarmInterval) {
         clearInterval(alarmInterval);
@@ -426,30 +438,13 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
       console.log('❌ Browser does not support notifications');
     }
     
-    // Determine scan interval based on trading hours and selected pairs
+    // Determine scan interval from saved settings (minutes → ms)
     const getScanInterval = () => {
-      // If using selected pairs (fewer than all pairs), use 5-minute intervals
-      const usingSelectedPairs = selectedPairs.length > 0 && selectedPairs.length < ALL_PAIRS.length;
-      
-      if (usingSelectedPairs) {
-        return 5 * 60 * 1000; // 5 minutes for selected pairs
-      }
-      
-      const hours = TradingHoursFilter.analyze();
-      if (hours.quality === 'PRIME') {
-        return 5 * 60 * 1000; // 5 minutes during PRIME time
-      } else if (hours.quality === 'GOOD') {
-        return 10 * 60 * 1000; // 10 minutes during GOOD time
-      } else {
-        return 15 * 60 * 1000; // 15 minutes during AVERAGE/POOR time
-      }
+      const minutes = getScanIntervalMinutes();
+      return minutes * 60 * 1000;
     };
     
-    // Initial scan on mount (only if no opportunities yet)
-    if (opportunities.length === 0 && !isScanning) {
-      scanAllPairs();
-    }
-    
+    // No automatic scan on mount — user must click Scan Now
     const interval = getScanInterval();
     
     // Countdown timer
@@ -503,16 +498,13 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
           <p className="text-sm text-gray-400">
             {autoScanEnabled ? (
               <>
-                Auto-scanning {selectedPairs.length > 0 ? `${selectedPairs.length} selected pair${selectedPairs.length > 1 ? 's' : ''}` : 'all pairs'} every {
-                  selectedPairs.length > 0 && selectedPairs.length < ALL_PAIRS.length ? '5' :
-                  tradingHours.quality === 'PRIME' ? '5' : tradingHours.quality === 'GOOD' ? '10' : '15'
-                } minutes
+                Auto-scanning {selectedPairs.length > 0 ? `${selectedPairs.length} selected pair${selectedPairs.length > 1 ? 's' : ''}` : 'all pairs'} every {getScanIntervalMinutes()} minutes
                 {scanCountdown > 0 && (
                   <span className="ml-2 text-cyan-400">• Next scan in {Math.floor(scanCountdown / 60)}:{(scanCountdown % 60).toString().padStart(2, '0')}</span>
                 )}
               </>
             ) : (
-              `Scanning ${selectedPairs.length > 0 ? `${selectedPairs.length} selected pair${selectedPairs.length > 1 ? 's' : ''}` : 'all pairs'} for opportunities`
+              <>Manual scan only — click <strong className="text-gray-300">Scan Now</strong> to analyze pairs (no AI calls until you click)</>
             )}
             {lastScanTime && (
               <span className="block text-xs text-gray-500 mt-1">
@@ -561,15 +553,19 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
             📊 {selectedPairs.length > 0 ? `${selectedPairs.length} Pairs` : 'Select Pairs'}
           </button>
           <button
-            onClick={() => setAutoScanEnabled(!autoScanEnabled)}
+            onClick={() => {
+              const next = !autoScanEnabled;
+              setAutoScanEnabledState(next);
+              setAutoScanEnabled(next);
+            }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               autoScanEnabled
                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                 : 'bg-gray-700 text-gray-400 border border-gray-600'
             }`}
-            title={autoScanEnabled ? 'Auto-scan enabled' : 'Auto-scan disabled'}
+            title={autoScanEnabled ? 'Auto-scan on (uses AI credits) — click to switch to manual' : 'Manual only — click to enable auto-scan in Setup'}
           >
-            {autoScanEnabled ? '⏸️ Auto' : '▶️ Manual'}
+            {autoScanEnabled ? '⏸️ Auto ON' : '▶️ Manual'}
           </button>
           <button
             onClick={scanAllPairs}

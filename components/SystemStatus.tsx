@@ -469,6 +469,18 @@ export function SystemStatus() {
 
   const allOnline = systems.length > 0 && systems.every(s => s.status === 'online');
   const hasErrors = systems.some(s => s.status === 'error' || s.status === 'offline');
+  const tunnelBridge = systems.find((s) => s.id === 'mt5-bridge');
+  const tunnelOnline = tunnelBridge?.status === 'online';
+  const statusButtonLabel = tunnelOnline
+    ? 'Bridge OK'
+    : isChecking
+      ? 'Checking…'
+      : 'Bridge offline';
+  const statusDotClass = tunnelOnline
+    ? 'bg-emerald-400'
+    : hasErrors
+      ? 'bg-rose-400'
+      : 'bg-gray-400';
 
   return (
     <div className="relative">
@@ -476,11 +488,11 @@ export function SystemStatus() {
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg bg-[#141c2b] border border-[#1e2738] text-white hover:bg-[#1e2738] transition-all text-xs sm:text-sm touch-manipulation"
-        title="System Status"
+        title={`System status — ${statusButtonLabel}`}
       >
         <div className="flex items-center gap-1.5">
-          <span className={`w-2 h-2 rounded-full ${allOnline ? 'bg-emerald-400' : hasErrors ? 'bg-rose-400' : 'bg-gray-400'} ${isChecking ? 'animate-pulse' : ''}`}></span>
-          <span className="hidden sm:inline">Status</span>
+          <span className={`w-2 h-2 rounded-full ${statusDotClass} ${isChecking ? 'animate-pulse' : ''}`}></span>
+          <span className="hidden sm:inline">{statusButtonLabel}</span>
         </div>
         <svg 
           className={`w-3 h-3 sm:w-4 sm:h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}

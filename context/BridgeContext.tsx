@@ -12,6 +12,7 @@ import {
   subscribeBridgePresence,
   type BridgePresence,
 } from '@/lib/bridge-presence';
+import { normalizeBridgeBaseUrl } from '@/config/bridge-config';
 import { loadUserBridgeSettings } from '@/lib/firebase/user-bridge-settings';
 import { fetchBridgeCredentials } from '@/lib/bridge-watch-client';
 
@@ -54,7 +55,10 @@ export function BridgeProvider({ children }: { children: ReactNode }) {
 
       unsub = subscribeBridgePresence(user.uid, (p) => {
         if (p.bridgeUrl && typeof window !== 'undefined') {
-          localStorage.setItem('bridge_url', p.bridgeUrl);
+          const normalized = normalizeBridgeBaseUrl(p.bridgeUrl);
+          if (normalized) {
+            localStorage.setItem('bridge_url', normalized);
+          }
         }
         setPresence(p);
         setLoading(false);

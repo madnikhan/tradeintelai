@@ -14,10 +14,10 @@ export function BridgePresenceBanner({ compact }: BridgePresenceBannerProps) {
   if (state === 'online') return null;
 
   const messages: Record<string, string> = {
-    not_paired: 'Home bridge not paired — pair your laptop in Settings to trade remotely.',
+    not_paired: 'Home bridge not paired — pair your laptop in Setup to trade remotely.',
     offline: 'Home bridge offline — start TradeIntel Bridge + MT5 on your home PC.',
     online_ea_disconnected: 'Home bridge online but MT5 EA disconnected — attach EA in MT5.',
-    unknown: 'Bridge status unknown — check Settings.',
+    unknown: 'Bridge status unknown — check Setup.',
   };
 
   const text = messages[state] ?? messages.unknown;
@@ -36,7 +36,7 @@ export function BridgePresenceBanner({ compact }: BridgePresenceBannerProps) {
         <p className="text-[10px] mt-1 text-gray-500 truncate">Last URL: {bridgeUrl}</p>
       )}
       <Link href="/dashboard?tab=settings" className="text-xs text-cyan-400 hover:underline mt-2 inline-block">
-        Open Settings → Pair home bridge
+        Open Setup → Pair home bridge
       </Link>
     </div>
   );

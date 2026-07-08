@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { getAnalysisAccuracy } from '@/lib/firebase/analysis-storage'
+import { getAllSymbolVerdicts, getTargetWinRatePercent, type VerdictResult } from '@/lib/trade-verdict-service'
 import { PerformanceAnalytics } from '@/lib/performance-analytics'
 import { Trade } from '@/types/trading'
+import { TRADING_RULES } from '@/config/trading-rules'
 import { LoadingSkeleton } from './LoadingSkeleton'
 import { EmptyState } from './EmptyState'
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts'
 
 interface AccuracyDashboardProps {
   trades?: Trade[]
@@ -34,6 +36,10 @@ export function AccuracyDashboard({ trades = [], currentBalance, initialBalance 
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d')
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData[]>([])
+  const [symbolVerdicts, setSymbolVerdicts] = useState<VerdictResult[]>([])
+
+  const targetWinRate = getTargetWinRatePercent()
+  const minTradesForTarget = TRADING_RULES.MIN_CLOSED_TRADES_FOR_TARGET
 
   useEffect(() => {
     loadAccuracyData()
@@ -50,6 +56,11 @@ export function AccuracyDashboard({ trades = [], currentBalance, initialBalance 
         days: timeRange === '7d' ? 7 : timeRange === '90d' ? 90 : timeRange === 'all' ? 3650 : 30,
       })
       setAccuracyStats(stats)
+
+      const verdicts = await getAllSymbolVerdicts(
+        timeRange === '7d' ? 7 : timeRange === '90d' ? 90 : timeRange === 'all' ? 3650 : 30
+      )
+      setSymbolVerdicts(verdicts)
       
       // Calculate time series data from trades
       if (trades.length > 0 && currentBalance) {
@@ -202,23 +213,33 @@ export function AccuracyDashboard({ trades = [], currentBalance, initialBalance 
               <span className="text-xs text-gray-500">Trades</span>
             </div>
             <div className={`text-3xl font-bold ${
-              performanceMetrics.winRate >= 60 ? 'text-green-400' :
-              performanceMetrics.winRate >= 50 ? 'text-yellow-400' :
+              performanceMetrics.winRate >= targetWinRate ? 'text-green-400' :
+              performanceMetrics.winRate >= TRADING_RULES.MIN_WIN_RATE * 100 ? 'text-yellow-400' :
               'text-red-400'
             } mb-1`}>
               {performanceMetrics.winRate.toFixed(1)}%
             </div>
             <div className="text-xs text-gray-500">
               {performanceMetrics.winningTrades} wins / {performanceMetrics.totalTrades} trades
+              {performanceMetrics.totalTrades >= minTradesForTarget && (
+                <span className={performanceMetrics.winRate >= targetWinRate ? ' text-green-400' : ' text-amber-400'}>
+                  {' '}· target {targetWinRate}%
+                </span>
+              )}
             </div>
-            <div className="mt-3 h-2 bg-[#1e2738] rounded-full overflow-hidden">
+            <div className="mt-3 h-2 bg-[#1e2738] rounded-full overflow-hidden relative">
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-cyan-400/80 z-10"
+                style={{ left: `${targetWinRate}%` }}
+                title={`${targetWinRate}% target`}
+              />
               <div
                 className={`h-full rounded-full ${
-                  performanceMetrics.winRate >= 60 ? 'bg-green-500' :
-                  performanceMetrics.winRate >= 50 ? 'bg-yellow-500' :
+                  performanceMetrics.winRate >= targetWinRate ? 'bg-green-500' :
+                  performanceMetrics.winRate >= TRADING_RULES.MIN_WIN_RATE * 100 ? 'bg-yellow-500' :
                   'bg-red-500'
                 }`}
-                style={{ width: `${performanceMetrics.winRate}%` }}
+                style={{ width: `${Math.min(100, performanceMetrics.winRate)}%` }}
               />
             </div>
           </div>
@@ -284,6 +305,12 @@ export function AccuracyDashboard({ trades = [], currentBalance, initialBalance 
                   labelStyle={{ color: '#fff' }}
                 />
                 <Legend />
+                <ReferenceLine
+                  y={targetWinRate}
+                  stroke="#22d3ee"
+                  strokeDasharray="4 4"
+                  label={{ value: `${targetWinRate}% target`, fill: '#22d3ee', fontSize: 11 }}
+                />
                 <Line
                   type="monotone"
                   dataKey="accuracy"
@@ -316,6 +343,49 @@ export function AccuracyDashboard({ trades = [], currentBalance, initialBalance 
               </ResponsiveContainer>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Per-symbol win rate (Firestore closed trades) */}
+      {symbolVerdicts.length > 0 && (
+        <div className="bg-[#141c2b] rounded-xl border border-[#1e2738] p-6">
+          <h3 className="text-lg font-semibold text-white mb-1">Per-Symbol Win Rate</h3>
+          <p className="text-xs text-gray-500 mb-4">
+            Rolling window · dashed line = {targetWinRate}% stretch target ({minTradesForTarget}+ trades for live KPI)
+          </p>
+          <div className="space-y-3">
+            {symbolVerdicts.map((sv) => (
+              <div key={sv.symbol} className="flex items-center gap-3">
+                <span className="w-20 text-sm font-medium text-white shrink-0">{sv.symbol}</span>
+                <div className="flex-1 h-2 bg-[#1e2738] rounded-full overflow-hidden relative">
+                  <div
+                    className="absolute top-0 bottom-0 w-px bg-cyan-400/60 z-10"
+                    style={{ left: `${targetWinRate}%` }}
+                  />
+                  <div
+                    className={`h-full rounded-full ${
+                      sv.verdict === 'ALLOW' ? 'bg-green-500' :
+                      sv.verdict === 'CAUTION' ? 'bg-yellow-500' :
+                      sv.verdict === 'BLOCK' ? 'bg-red-500' :
+                      'bg-gray-600'
+                    }`}
+                    style={{ width: `${Math.min(100, sv.winRate)}%` }}
+                  />
+                </div>
+                <span className="w-28 text-right text-xs text-gray-400 shrink-0">
+                  {sv.sampleSize > 0 ? `${sv.winRate.toFixed(0)}% (${sv.sampleSize})` : '—'}
+                </span>
+                <span className={`w-16 text-right text-[10px] uppercase shrink-0 ${
+                  sv.verdict === 'ALLOW' ? 'text-green-400' :
+                  sv.verdict === 'CAUTION' ? 'text-yellow-400' :
+                  sv.verdict === 'BLOCK' ? 'text-red-400' :
+                  'text-gray-500'
+                }`}>
+                  {sv.verdict === 'INSUFFICIENT_DATA' ? '—' : sv.verdict}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

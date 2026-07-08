@@ -234,14 +234,17 @@ export class GatedTradingEngine {
     console.log(`[GATE 4] Starting Execution Permission Assessment`);
     console.log(`[GATE 4] Gate 1: ${marketReadability.isReadable ? 'READABLE' : 'UNREADABLE'}, Bias: ${directionalBias.direction} (${directionalBias.strength}%)`);
     
-    const executionPermission = this.assessExecutionPermission(
-      marketReadability,
-      directionalBias,
-      technicalScore,
-      gptStructure,
-      regimeAnalysis,
-      tradingHours,
-      cotAnalysis
+    const executionPermission = await this.applyEmpiricalVerdictGate(
+      symbol,
+      this.assessExecutionPermission(
+        marketReadability,
+        directionalBias,
+        technicalScore,
+        gptStructure,
+        regimeAnalysis,
+        tradingHours,
+        cotAnalysis
+      )
     );
     
     this.debugLog.push(`[GATE 4] Result: ${executionPermission.canExecute ? 'EXECUTION ALLOWED' : 'EXECUTION BLOCKED'}`);
@@ -1652,6 +1655,46 @@ export class GatedTradingEngine {
   // ==========================================================================
   // LAYER 4: EXECUTION PERMISSION GATE
   // ==========================================================================
+
+  /**
+   * Gate 4 empirical feedback: block pairs with proven poor history; tighten on CAUTION.
+   */
+  private async applyEmpiricalVerdictGate(
+    symbol: string,
+    permission: ExecutionPermission
+  ): Promise<ExecutionPermission> {
+    if (!permission.canExecute) return permission;
+    if (typeof window === 'undefined') return permission;
+
+    try {
+      const { getSymbolVerdict, shouldBlockExecution } = await import('./trade-verdict-service');
+      const verdict = await getSymbolVerdict(symbol);
+
+      if (shouldBlockExecution(verdict)) {
+        this.debugLog.push(`[GATE 4] Empirical BLOCK: ${verdict.reason}`);
+        return {
+          ...permission,
+          canExecute: false,
+          reason: verdict.reason,
+          blockedBy: [...permission.blockedBy, 'Historical win rate below threshold'],
+        };
+      }
+
+      if (verdict.verdict === 'CAUTION' && permission.confidence < 60) {
+        this.debugLog.push(`[GATE 4] Empirical CAUTION: confidence ${permission.confidence}% < 60%`);
+        return {
+          ...permission,
+          canExecute: false,
+          reason: `Historical caution (${verdict.winRate}% WR): need ≥60% confidence — ${verdict.reason}`,
+          blockedBy: [...permission.blockedBy, 'Empirical CAUTION — confidence too low'],
+        };
+      }
+    } catch (e) {
+      console.warn('[GATE 4] Empirical verdict check skipped:', e);
+    }
+
+    return permission;
+  }
   
   /**
    * Assess if trade execution is permitted
@@ -2356,14 +2399,24 @@ export class GatedTradingEngine {
     let empiricalSampleSize = 0;
 
     try {
-      const { getAnalysisAccuracy } = await import('./firebase/analysis-storage');
-      const stats = await getAnalysisAccuracy(symbol);
-      if (stats.total >= 10) {
-        baseWinRate = stats.accuracy;
-        empiricalSampleSize = stats.total;
+      const { getSymbolVerdict } = await import('./trade-verdict-service');
+      const verdict = await getSymbolVerdict(symbol);
+      if (verdict.sampleSize >= 15) {
+        baseWinRate = verdict.winRate;
+        empiricalSampleSize = verdict.sampleSize;
         this.debugLog.push(
-          `[EXPECTANCY] Using empirical win rate ${stats.accuracy.toFixed(1)}% from ${stats.total} closed signals`
+          `[EXPECTANCY] Using trade-history win rate ${verdict.winRate.toFixed(1)}% from ${verdict.sampleSize} closed trades`
         );
+      } else {
+        const { getAnalysisAccuracy } = await import('./firebase/analysis-storage');
+        const stats = await getAnalysisAccuracy(symbol);
+        if (stats.total >= 10) {
+          baseWinRate = stats.accuracy;
+          empiricalSampleSize = stats.total;
+          this.debugLog.push(
+            `[EXPECTANCY] Using empirical win rate ${stats.accuracy.toFixed(1)}% from ${stats.total} closed signals`
+          );
+        }
       }
     } catch {
       // Firebase unavailable — use heuristic below

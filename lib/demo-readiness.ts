@@ -18,9 +18,18 @@ export interface DemoReadinessMetrics {
 
 export interface DemoReadinessResult {
   ready: boolean;
+  /** Stretch KPI: 65% rolling win rate with 30+ closed trades */
+  stretchTargetMet: boolean;
   metrics: DemoReadinessMetrics;
   failures: string[];
+  stretchFailures: string[];
   goals: {
+    label: string;
+    current: string;
+    target: string;
+    met: boolean;
+  }[];
+  stretchGoals: {
     label: string;
     current: string;
     target: string;
@@ -32,7 +41,7 @@ export function evaluateDemoReadiness(
   trades: Trade[],
   initialBalance: number,
   currentBalance: number
-): Omit<DemoReadinessResult, 'resolvedAnalyses'> & { metrics: DemoReadinessMetrics } {
+): DemoReadinessResult {
   const closed = trades.filter((t) => t.status === 'closed');
   const metricsBase = PerformanceAnalytics.calculateAdvancedMetrics(
     trades,
@@ -98,7 +107,53 @@ export function evaluateDemoReadiness(
     failures.length === 0 &&
     closed.length >= TRADING_RULES.MIN_CLOSED_TRADES_FOR_LIVE;
 
-  return { ready, metrics, failures, goals };
+  const stretchGoals = [
+    {
+      label: `Stretch win rate ≥ ${(TRADING_RULES.TARGET_WIN_RATE * 100).toFixed(0)}%`,
+      current: `${metricsBase.winRate.toFixed(1)}%`,
+      target: `${(TRADING_RULES.TARGET_WIN_RATE * 100).toFixed(0)}%`,
+      met:
+        closed.length >= TRADING_RULES.MIN_CLOSED_TRADES_FOR_TARGET &&
+        winRate >= TRADING_RULES.TARGET_WIN_RATE,
+    },
+    {
+      label: `Stretch sample ≥ ${TRADING_RULES.MIN_CLOSED_TRADES_FOR_TARGET} trades`,
+      current: String(closed.length),
+      target: String(TRADING_RULES.MIN_CLOSED_TRADES_FOR_TARGET),
+      met: closed.length >= TRADING_RULES.MIN_CLOSED_TRADES_FOR_TARGET,
+    },
+    {
+      label: `Stretch profit factor ≥ 2.0`,
+      current: pf.toFixed(2),
+      target: '2.0',
+      met: closed.length >= TRADING_RULES.MIN_CLOSED_TRADES_FOR_TARGET && pf >= 2,
+    },
+    {
+      label: `Stretch resolved analyses ≥ 25`,
+      current: '—',
+      target: '25',
+      met: false,
+    },
+  ];
+
+  const stretchFailures: string[] = [];
+  if (!stretchGoals[0].met && closed.length >= TRADING_RULES.MIN_CLOSED_TRADES_FOR_TARGET) {
+    stretchFailures.push(stretchGoals[0].label);
+  }
+  if (!stretchGoals[1].met) stretchFailures.push(stretchGoals[1].label);
+
+  const stretchTargetMet =
+    stretchGoals[0].met && stretchGoals[1].met && stretchGoals[2].met;
+
+  return {
+    ready,
+    stretchTargetMet,
+    metrics,
+    failures,
+    stretchFailures,
+    goals,
+    stretchGoals,
+  };
 }
 
 export async function assertCanGoLive(
@@ -131,10 +186,34 @@ export async function assertCanGoLive(
     options?.allowOverride === true ||
     (base.ready && analysisOk);
 
+  const stretchGoals = base.stretchGoals.map((g, i) => {
+    if (i === 3) {
+      return {
+        ...g,
+        current: String(accuracy.total),
+        met: accuracy.total >= 25,
+      };
+    }
+    return g;
+  });
+
+  const stretchFailures = [...base.stretchFailures];
+  if (!stretchGoals[3].met && accuracy.total > 0) {
+    stretchFailures.push(stretchGoals[3].label);
+  }
+
+  const stretchTargetMet =
+    base.stretchTargetMet &&
+    stretchGoals[3].met &&
+    accuracy.total >= 25;
+
   return {
     ready: finalReady,
+    stretchTargetMet,
     metrics,
     failures: options?.allowOverride ? [] : failures,
+    stretchFailures: options?.allowOverride ? [] : stretchFailures,
     goals: base.goals,
+    stretchGoals,
   };
 }

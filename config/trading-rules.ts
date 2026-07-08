@@ -98,6 +98,9 @@ export const TRADING_RULES = {
   MIN_CONSECUTIVE_WEEKS: 4,   // 4 weeks (up from 3)
   MIN_CLOSED_TRADES_FOR_LIVE: 20,
   MIN_RESOLVED_ANALYSES: 10,
+  /** Stretch KPI for win-rate improvement plan */
+  TARGET_WIN_RATE: 0.65,
+  MIN_CLOSED_TRADES_FOR_TARGET: 30,
 
   // Position watch (browser-based, while dashboard open)
   POSITION_WATCH_POLL_MS: 8000,

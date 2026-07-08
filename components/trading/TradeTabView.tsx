@@ -8,6 +8,7 @@ import { SmartScoreCard } from '@/components/SmartScoreCard';
 import { RiskMonitor } from '@/components/RiskMonitor';
 import { PositionWatchPanel } from '@/components/PositionWatchPanel';
 import { useTradingContext } from '@/context/TradingContext';
+import { TradeVerdictBanner } from '@/components/TradeVerdictBanner';
 import { AccordionItem } from '@/components/ui/Accordion';
 import type { Account } from '@/types/trading';
 
@@ -33,6 +34,8 @@ export function TradeTabView({ account }: TradeTabViewProps) {
         symbol={symbol}
         isAnalyzing={isAnalyzing}
       />
+
+      <TradeVerdictBanner symbol={symbol} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="lg:col-span-2 space-y-4 sm:space-y-6">

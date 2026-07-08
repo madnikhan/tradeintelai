@@ -10,11 +10,14 @@ import { TRADING_RULES } from '../config/trading-rules';
 
 const PAIRS = ['EURUSD', 'GBPUSD', 'USDCAD', 'XAUUSD'];
 const offline = process.argv.includes('--offline');
+/** Backtests need non-zero balance; DEMO_BALANCE is 0 until MT5 syncs at runtime */
+const BACKTEST_BALANCE =
+  TRADING_RULES.DEMO_BALANCE > 0 ? TRADING_RULES.DEMO_BALANCE : 10_000;
 
 async function runPair(symbol: string) {
   const end = new Date();
   const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const engine = new BacktestingEngine(TRADING_RULES.DEMO_BALANCE);
+  const engine = new BacktestingEngine(BACKTEST_BALANCE);
 
   if (offline) {
     return {
@@ -31,7 +34,7 @@ async function runPair(symbol: string) {
       startDate: start,
       endDate: end,
       timeframe: 'H1',
-      initialBalance: TRADING_RULES.DEMO_BALANCE,
+      initialBalance: BACKTEST_BALANCE,
       riskPercentage: TRADING_RULES.RISK_PERCENTAGE,
       maxOpenTrades: TRADING_RULES.MAX_OPEN_TRADES,
     });

@@ -109,6 +109,44 @@ export async function saveAnalysisToFirestore(
 }
 
 /**
+ * Mark analysis as acted upon when trade opens (outcome pending until close).
+ */
+export async function markAnalysisActionTaken(
+  analysisId: string,
+  tradeId: string,
+  opts?: { predictedReturn?: number }
+): Promise<void> {
+  if (!isFirebaseConfigured()) return;
+
+  try {
+    const accountDocId = getAccountDocumentId();
+    const analysisRef = doc(
+      getDb(),
+      ANALYSIS_COLLECTION,
+      accountDocId,
+      'results',
+      analysisId
+    );
+
+    await setDoc(
+      analysisRef,
+      {
+        actionTaken: true,
+        tradeId,
+        outcome: {
+          accuracy: 'pending',
+          predictedReturn: opts?.predictedReturn ?? 0,
+        },
+        updatedAt: Timestamp.now(),
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    console.error('❌ Failed to mark analysis action taken:', error);
+  }
+}
+
+/**
  * Update analysis with trade outcome
  */
 export async function updateAnalysisOutcome(

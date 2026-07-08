@@ -36,6 +36,7 @@ import { BridgeSetupBanner } from '@/components/BridgeSetupBanner'
 import { DemoSuccessGoals } from '@/components/DemoSuccessGoals'
 import { Suspense } from 'react'
 import { DashboardApproveHandler } from '@/components/DashboardApproveHandler'
+import { startOutcomeSyncPolling } from '@/lib/trade-outcome-sync'
 
 const tabPanelFallback = () => <LoadingSkeleton type="card" />
 
@@ -143,6 +144,11 @@ export default function DashboardContent() {
       setTradingHours(TradingHoursFilter.analyze())
     }, 60000)
     return () => clearInterval(interval)
+  }, [])
+
+  // Sync MT5 closed positions → Firestore outcomes (no Position Watch tab required)
+  useEffect(() => {
+    return startOutcomeSyncPolling()
   }, [])
 
   // Get breadcrumb items based on active tab

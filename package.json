@@ -20,7 +20,11 @@
     "cloudflare": "./start-cloudflare.sh",
     "cloudflare:stop": "./stop-cloudflare.sh",
     "validate:production": "npm test && npx tsx scripts/compare-scan-trade-engines.ts EURUSD && npx tsx scripts/run-backtest-report.ts --offline",
-    "backtest:report": "npx tsx scripts/run-backtest-report.ts"
+    "backtest:report": "npx tsx scripts/run-backtest-report.ts",
+    "audit:full": "npx tsx scripts/run-full-audit.ts",
+    "audit:quick": "npx tsx scripts/run-full-audit.ts --skip-backtest --skip-gpt",
+    "readiness:audit": "npx tsx scripts/run-production-readiness-audit.ts",
+    "readiness:demo": "npx tsx scripts/check-demo-readiness.ts"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.0",

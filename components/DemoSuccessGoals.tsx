@@ -19,10 +19,14 @@ export function DemoSuccessGoals({
   const [goals, setGoals] = useState<
     { label: string; current: string; target: string; met: boolean }[]
   >([]);
+  const [stretchGoals, setStretchGoals] = useState<
+    { label: string; current: string; target: string; met: boolean }[]
+  >([]);
 
   useEffect(() => {
     const result = evaluateDemoReadiness(trades, initialBalance, currentBalance);
     setGoals(result.goals);
+    setStretchGoals(result.stretchGoals);
   }, [trades, initialBalance, currentBalance]);
 
   const allMet = goals.length > 0 && goals.every((g) => g.met);
@@ -54,6 +58,25 @@ export function DemoSuccessGoals({
           </div>
         ))}
       </div>
+      {stretchGoals.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-amber-500/20 space-y-2">
+          <p className="text-xs text-amber-300/80 font-medium">
+            65% stretch track ({TRADING_RULES.MIN_CLOSED_TRADES_FOR_TARGET}+ trades)
+          </p>
+          {stretchGoals.map((g) => (
+            <div key={g.label} className="flex justify-between items-center">
+              <span className="text-gray-500 text-xs">{g.label}</span>
+              <span
+                className={`font-mono text-xs ${
+                  g.met ? 'text-emerald-400' : 'text-gray-400'
+                }`}
+              >
+                {g.current}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       <p className="text-[10px] text-gray-600 mt-3">
         Live requires {TRADING_RULES.MIN_CONSECUTIVE_WEEKS} profitable weeks,{' '}
         {(TRADING_RULES.MIN_WIN_RATE * 100).toFixed(0)}% win rate, drawdown &lt;{' '}

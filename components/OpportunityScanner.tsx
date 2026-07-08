@@ -10,7 +10,7 @@ import { TRADING_RULES } from '@/config/trading-rules';
 import { TradingHoursFilter } from '@/lib/trading-hours';
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { EmptyState } from '@/components/EmptyState';
-import { Tooltip } from '@/components/Tooltip';
+import { TradeVerdictBanner } from '@/components/TradeVerdictBanner';
 // API keys are now managed server-side via environment variables
 
 interface OpportunityScannerProps {
@@ -980,6 +980,9 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
                     >
                       <td className="py-3 px-4">
                         <span className="font-medium text-white">{opp.symbol}</span>
+                        <div className="mt-1">
+                          <TradeVerdictBanner symbol={opp.symbol} compact />
+                        </div>
                         {index === 0 && isValid && (
                           <span className="ml-2 text-xs bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded">BEST</span>
                         )}

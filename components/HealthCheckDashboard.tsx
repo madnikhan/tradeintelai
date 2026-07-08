@@ -96,14 +96,40 @@ export function HealthCheckDashboard() {
       })
     }
 
-    // Gemini is server-only (GEMINI_API_KEY) — use authenticated /api/gemini/chat proxy
-    checks.push({
-      service: 'Gemini API',
-      status: 'healthy',
-      latency: 0,
-      lastCheck: new Date(),
-      message: 'Server proxy (sign in required)',
-    })
+    // Gemini — ping server health route (same as SystemStatus)
+    try {
+      const startTime = Date.now()
+      const response = await fetch('/api/gemini/health', {
+        signal: AbortSignal.timeout(10000),
+      })
+      const latency = Date.now() - startTime
+      const data = response.ok ? await response.json().catch(() => ({})) : null
+
+      if (response.ok) {
+        checks.push({
+          service: 'Gemini API',
+          status: 'healthy',
+          latency,
+          lastCheck: new Date(),
+          message: (data as { message?: string })?.message ?? 'Server proxy OK',
+        })
+      } else {
+        checks.push({
+          service: 'Gemini API',
+          status: 'degraded',
+          latency,
+          lastCheck: new Date(),
+          message: `HTTP ${response.status}`,
+        })
+      }
+    } catch (error: unknown) {
+      checks.push({
+        service: 'Gemini API',
+        status: 'down',
+        lastCheck: new Date(),
+        message: error instanceof Error ? error.message : 'Connection failed',
+      })
+    }
 
     setHealthStatuses(checks)
     setLoading(false)

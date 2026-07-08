@@ -12,12 +12,11 @@ Use this list before switching from **demo** to **live**. No step alone guarante
 ## 2. Automated validation
 
 ```bash
-npm run validate:production
+npm run readiness:audit      # Full production readiness + LIVE_READINESS_REPORT.md
+npm run audit:full           # A–Z local infrastructure audit
+npm run validate:production  # Unit tests + engine parity + backtest
+npx tsx scripts/check-demo-readiness.ts   # Daily demo goal progress
 ```
-
-- [ ] Unit tests pass (`npm test`)
-- [ ] Scan vs Trade engine comparison runs without fatal errors
-- [ ] Backtest report generated under `reports/` (use `--offline` in CI without MT5 data)
 
 ## 3. Demo account metrics
 

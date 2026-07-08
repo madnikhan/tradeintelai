@@ -81,13 +81,21 @@ export class BacktestingEngine {
         throw new Error('No historical data available for backtesting')
       }
 
-      // Simulate trading on each candle
+      // Simulate trading — sample bars to reduce engine/API load (~once per day)
+      const sampleStep = this.getAnalysisSampleStep(config.timeframe);
+
       for (let i = 0; i < this.historicalData.length; i++) {
         const currentPrice = this.historicalData[i]
         const openTrades = this.trades.filter(t => t.status === 'open')
 
-        // Check if we can open new trades
-        if (openTrades.length < config.maxOpenTrades) {
+        const isSampleBar = i % sampleStep === 0
+
+        // Check if we can open new trades (only on sample bars, positive balance)
+        if (
+          isSampleBar &&
+          this.currentBalance > 0 &&
+          openTrades.length < config.maxOpenTrades
+        ) {
           try {
             // Run AI analysis (without chart image for backtesting)
             const analysis = await this.engine.analyzeMarket(
@@ -145,6 +153,22 @@ export class BacktestingEngine {
         errors,
       }
     }
+  }
+
+  /**
+   * Bars between full engine runs (~one analysis per calendar day).
+   */
+  private getAnalysisSampleStep(timeframe: BacktestConfig['timeframe']): number {
+    const steps: Record<BacktestConfig['timeframe'], number> = {
+      M1: 1440,
+      M5: 288,
+      M15: 96,
+      M30: 48,
+      H1: 24,
+      H4: 6,
+      D1: 1,
+    }
+    return steps[timeframe] ?? 24
   }
 
   /**

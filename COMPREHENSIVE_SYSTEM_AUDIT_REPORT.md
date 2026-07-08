@@ -1,19 +1,19 @@
 # Comprehensive System Audit Report
 
-**Generated:** 2026-01-07T15:36:51.097Z
-**Duration:** 53.38s
+**Generated:** 2026-07-08T02:06:42.705Z
+**Duration:** 65.22s
 
 ## Executive Summary
 
-### Overall System Accuracy: **93.1%**
+### Overall System Accuracy: **100.0%**
 **Confidence Level:** HIGH
 **Note:** System is highly accurate and reliable
 
 ### Test Results
 - **Total Tests:** 29
-- **Passed:** 27
-- **Failed:** 2
-- **Pass Rate:** 93.1%
+- **Passed:** 29
+- **Failed:** 0
+- **Pass Rate:** 100.0%
 
 ---
 
@@ -69,10 +69,10 @@
 
 
 
-### ❌ Gated Trading Engine
-- **Status:** Not Working
-- **Accuracy:** 80.0%
-- **Tests:** 4/5 passed
+### ✅ Gated Trading Engine
+- **Status:** Working
+- **Accuracy:** 100.0%
+- **Tests:** 5/5 passed
 
 
 
@@ -96,21 +96,19 @@
 
 
 
-### ❌ Firebase Integration
-- **Status:** Not Working
+### ✅ Firebase Integration
+- **Status:** Working
 - **Accuracy:** 100.0%
 - **Tests:** 1/1 passed
 
-**Issues:**
-- Firebase not configured - check environment variables
 
 
 
 
-### ❌ Performance & Accuracy
-- **Status:** Not Working
-- **Accuracy:** 0.0%
-- **Tests:** 0/1 passed
+### ✅ Performance & Accuracy
+- **Status:** Working
+- **Accuracy:** 100.0%
+- **Tests:** 1/1 passed
 
 
 
@@ -143,8 +141,11 @@
 - **Fundamental Analysis** - 100.0% accuracy
 - **COT Analysis** - 100.0% accuracy
 - **Regime Detection** - 100.0% accuracy
+- **Gated Trading Engine** - 100.0% accuracy
 - **Risk Management** - 100.0% accuracy
 - **MT5 Bridge** - 100.0% accuracy
+- **Firebase Integration** - 100.0% accuracy
+- **Performance & Accuracy** - 100.0% accuracy
 - **Error Handling** - 100.0% accuracy
 - **Integration** - 100.0% accuracy
 
@@ -152,18 +153,7 @@
 
 ## What's Not Working ❌
 
-
-### Gated Trading Engine
-
-
-
-### Firebase Integration
-- Firebase not configured - check environment variables
-
-
-### Performance & Accuracy
-
-
+All components are working!
 
 ---
 
@@ -171,7 +161,6 @@
 
 - Caching may not be working optimally
 - Trading hours analysis may need improvement
-- Firebase not configured - check environment variables
 
 ---
 
@@ -182,13 +171,13 @@
 - **Fundamental Analysis:** 100.0%
 - **COT Analysis:** 100.0%
 - **Regime Detection:** 100.0%
+- **Gated Trading Engine:** 100.0%
 - **Risk Management:** 100.0%
 - **MT5 Bridge:** 100.0%
 - **Firebase Integration:** 100.0%
+- **Performance & Accuracy:** 100.0%
 - **Error Handling:** 100.0%
 - **Integration:** 100.0%
-- **Gated Trading Engine:** 80.0%
-- **Performance & Accuracy:** 0.0%
 
 ---
 
@@ -198,7 +187,7 @@
 ### MT5 Price Data Provider
 - **Category:** Data Providers
 - **Status:** PASS
-- **Duration:** 128ms
+- **Duration:** 126ms
 
 - **Details:** {
   "source": "MT5",
@@ -210,7 +199,7 @@
 ### Trading Economics - Interest Rate
 - **Category:** Data Providers
 - **Status:** PASS
-- **Duration:** 858ms
+- **Duration:** 244ms
 
 - **Details:** {
   "rate": 5.25,
@@ -222,10 +211,10 @@
 ### Trading Economics - CPI
 - **Category:** Data Providers
 - **Status:** PASS
-- **Duration:** 368ms
+- **Duration:** 78ms
 
 - **Details:** {
-  "value": 3.2,
+  "value": 4.2,
   "currency": "USD"
 }
 
@@ -233,7 +222,7 @@
 ### Trading Economics - GDP
 - **Category:** Data Providers
 - **Status:** PASS
-- **Duration:** 521ms
+- **Duration:** 412ms
 
 - **Details:** {
   "value": 2.5,
@@ -244,23 +233,23 @@
 ### COT Data Provider
 - **Category:** Data Providers
 - **Status:** PASS
-- **Duration:** 1100ms
+- **Duration:** 739ms
 
 - **Details:** {
   "count": 52,
   "available": true,
-  "latest": "2025-01-07T00:00:00.000Z"
+  "latest": "2025-07-07T23:00:00.000Z"
 }
 
 
 ### RSI Calculation
 - **Category:** Technical Analysis
 - **Status:** PASS
-- **Duration:** 115ms
+- **Duration:** 1075ms
 
 - **Details:** {
-  "rsi": 66,
-  "status": "Neutral"
+  "rsi": 0,
+  "status": "Oversold"
 }
 
 
@@ -270,8 +259,8 @@
 - **Duration:** 0ms
 
 - **Details:** {
-  "score": 66,
-  "interpretation": "Bullish"
+  "score": 0,
+  "interpretation": "Bearish"
 }
 
 
@@ -289,10 +278,10 @@
 ### Fundamental Analysis Score
 - **Category:** Fundamental Analysis
 - **Status:** PASS
-- **Duration:** 5923ms
+- **Duration:** 5106ms
 
 - **Details:** {
-  "score": 52,
+  "score": 55,
   "interpretation": "Bullish"
 }
 
@@ -300,7 +289,7 @@
 ### Economic Calendar Integration
 - **Category:** Fundamental Analysis
 - **Status:** PASS
-- **Duration:** 157ms
+- **Duration:** 164ms
 
 - **Details:** {
   "hasNews": true,
@@ -314,7 +303,7 @@
 - **Duration:** 0ms
 
 - **Details:** {
-  "currentSession": "London-New York Overlap"
+  "currentSession": "Sydney + Tokyo"
 }
 
 
@@ -332,10 +321,10 @@
 ### COT Analysis Logic
 - **Category:** COT Analysis
 - **Status:** PASS
-- **Duration:** 5ms
+- **Duration:** 3ms
 
 - **Details:** {
-  "recommendation": "HOLD",
+  "recommendation": "STRONG_BUY",
   "confidence": 100
 }
 
@@ -346,32 +335,33 @@
 - **Duration:** 1ms
 
 - **Details:** {
-  "regime": "TRENDING_UP",
-  "confidence": 65,
-  "trendStrength": 84
+  "regime": "TRENDING_DOWN",
+  "confidence": 81,
+  "trendStrength": 82
 }
 
 
 ### ML-Based Regime Detection
 - **Category:** Regime Detection
 - **Status:** PASS
-- **Duration:** 3ms
+- **Duration:** 4ms
 
 - **Details:** {
   "regime": "LOW_VOLATILITY_RANGE",
-  "confidence": 31
+  "confidence": 45
 }
 
 
 ### Full Gated Engine Analysis
 - **Category:** Gated Trading Engine
 - **Status:** PASS
-- **Duration:** 376ms
+- **Duration:** 676ms
 
 - **Details:** {
   "symbol": "EURUSD",
   "recommendation": "HOLD",
-  "confidence": 54,
+  "confidence": 59,
+  "gate1Readable": false,
   "gate2Bias": "NEUTRAL",
   "gate4CanExecute": false
 }
@@ -379,16 +369,20 @@
 
 ### Gate 1 - Market Readability
 - **Category:** Gated Trading Engine
-- **Status:** FAIL
-- **Duration:** 175ms
-- **Error:** Invalid Gate 1 isReadable type: undefined
+- **Status:** PASS
+- **Duration:** 140ms
 
+- **Details:** {
+  "isReadable": false,
+  "confidence": 45,
+  "reason": "Market structure unclear: Weak trend (strength: 10.0% < 60%); No confirmed pattern detected (confidence < 70%)"
+}
 
 
 ### Gate 2 - Directional Bias
 - **Category:** Gated Trading Engine
 - **Status:** PASS
-- **Duration:** 157ms
+- **Duration:** 160ms
 
 - **Details:** {
   "direction": "NEUTRAL",
@@ -399,19 +393,19 @@
 ### Gate 4 - Execution Permission
 - **Category:** Gated Trading Engine
 - **Status:** PASS
-- **Duration:** 189ms
+- **Duration:** 166ms
 
 - **Details:** {
   "canExecute": false,
-  "confidence": 54,
-  "reason": "Market structure unclear: Weak trend (strength: 0.0% < 60%); No confirmed pattern detected (confidence < 70%); No support/resistance levels identified"
+  "confidence": 59,
+  "reason": "Market structure unclear: Weak trend (strength: 10.0% < 60%); No confirmed pattern detected (confidence < 70%)"
 }
 
 
 ### Multiple Symbols Analysis
 - **Category:** Gated Trading Engine
 - **Status:** PASS
-- **Duration:** 25602ms
+- **Duration:** 38713ms
 
 - **Details:** {
   "tested": 4,
@@ -447,7 +441,7 @@
 ### MT5 Bridge Connection
 - **Category:** MT5 Bridge
 - **Status:** PASS
-- **Duration:** 422ms
+- **Duration:** 2ms
 
 - **Details:** {
   "connected": true,
@@ -458,11 +452,11 @@
 ### MT5 Account Info
 - **Category:** MT5 Bridge
 - **Status:** PASS
-- **Duration:** 1044ms
+- **Duration:** 641ms
 
 - **Details:** {
-  "balance": 6403300.49,
-  "equity": 6403300.89,
+  "balance": 6403324.12,
+  "equity": 6403324.12,
   "currency": "USD"
 }
 
@@ -470,26 +464,30 @@
 ### Firebase Configuration
 - **Category:** Firebase Integration
 - **Status:** PASS
-- **Duration:** 4ms
+- **Duration:** 1ms
 
 - **Details:** {
-  "configured": false,
-  "note": "Firebase may not be required for all features"
+  "configured": true,
+  "status": "Firebase is configured"
 }
 
 
 ### Performance Analytics Calculation
 - **Category:** Performance & Accuracy
-- **Status:** FAIL
+- **Status:** PASS
 - **Duration:** 1ms
-- **Error:** Cannot read properties of undefined (reading 'getFullYear')
 
+- **Details:** {
+  "winRate": 66.66666666666666,
+  "profitFactor": 3.5,
+  "totalTrades": 3
+}
 
 
 ### Invalid Symbol Handling
 - **Category:** Error Handling
 - **Status:** PASS
-- **Duration:** 15916ms
+- **Duration:** 16448ms
 
 - **Details:** {
   "handled": true,
@@ -512,12 +510,12 @@
 ### End-to-End Market Analysis
 - **Category:** Integration
 - **Status:** PASS
-- **Duration:** 298ms
+- **Duration:** 303ms
 
 - **Details:** {
   "symbol": "EURUSD",
   "recommendation": "HOLD",
-  "confidence": 54,
+  "confidence": 59,
   "allGatesPresent": true
 }
 

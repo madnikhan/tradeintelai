@@ -39,6 +39,27 @@ export interface RiskMetrics {
   availableBalance: number;
 }
 
+export type TradeVerdict = 'ALLOW' | 'CAUTION' | 'BLOCK' | 'INSUFFICIENT_DATA';
+
+/** Context captured at trade open for win-rate learning */
+export interface TradeFeatures {
+  analysisId?: string;
+  orderId?: string | number;
+  source?: 'ai' | 'manual' | 'scalp';
+  gate1Readable?: boolean;
+  gate2Bias?: string;
+  gate3Alignment?: string;
+  gate4Permitted?: boolean;
+  regime?: string;
+  tradingSession?: string;
+  dayOfWeek?: string;
+  recommendation?: string;
+  confidence?: number;
+  overallScore?: number;
+  rrRatio?: number;
+  expectancy?: number;
+}
+
 export interface Trade {
   id: string;
   pair: string;
@@ -56,6 +77,8 @@ export interface Trade {
   closePrice?: number;
   closeTime?: Date;
   closeReason?: string;
+  /** Linked gated analysis + gate context for empirical win-rate */
+  features?: TradeFeatures;
 }
 
 export interface Account {

@@ -29,11 +29,17 @@ const TRADES_COLLECTION = 'trades';
  * Convert Trade to Firestore document
  */
 function tradeToFirestore(trade: Trade): any {
+  const toTs = (d: Date | string | undefined) => {
+    if (!d) return undefined;
+    const date = d instanceof Date ? d : new Date(d);
+    return Timestamp.fromDate(date);
+  };
   return {
     ...trade,
-    timestamp: trade.timestamp instanceof Date 
-      ? Timestamp.fromDate(trade.timestamp) 
+    timestamp: trade.timestamp instanceof Date
+      ? Timestamp.fromDate(trade.timestamp)
       : Timestamp.fromDate(new Date(trade.timestamp)),
+    closeTime: toTs(trade.closeTime),
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
   };
@@ -43,9 +49,18 @@ function tradeToFirestore(trade: Trade): any {
  * Convert Firestore document to Trade
  */
 function firestoreToTrade(docData: any): Trade {
+  const toDate = (v: unknown): Date | undefined => {
+    if (!v) return undefined;
+    if (v instanceof Date) return v;
+    if (typeof (v as { toDate?: () => Date }).toDate === 'function') {
+      return (v as { toDate: () => Date }).toDate();
+    }
+    return new Date(v as string | number);
+  };
   return {
     ...docData,
-    timestamp: docData.timestamp?.toDate() || new Date(docData.timestamp),
+    timestamp: toDate(docData.timestamp) ?? new Date(),
+    closeTime: toDate(docData.closeTime),
   };
 }
 
@@ -161,11 +176,12 @@ export async function getTradesBySymbol(symbol: string): Promise<Trade[]> {
   }
 
   try {
+    const pair = symbol.replace(/\//g, '').toUpperCase();
     const accountDocId = getAccountDocumentId();
     const tradesRef = collection(getDb(), TRADES_COLLECTION, accountDocId, 'trades');
     const q = query(
-      tradesRef, 
-      where('symbol', '==', symbol),
+      tradesRef,
+      where('pair', '==', pair),
       orderBy('timestamp', 'desc')
     );
     

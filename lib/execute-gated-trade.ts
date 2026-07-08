@@ -6,6 +6,8 @@ import { httpBridge } from '@/lib/http-bridge-connector';
 import { registerPositionWatch } from '@/lib/register-position-watch';
 import { TradingModeManager } from '@/lib/trading-mode';
 import { notifyTradeExecutedClient } from '@/lib/notifications/client-notify';
+import { persistExecutedTrade } from '@/lib/trade-execution-persistence';
+import { gatedEngineAdapter } from '@/lib/gated-engine-adapter';
 import type { ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
 
 export interface ExecuteGatedTradeParams {
@@ -136,25 +138,38 @@ export async function executeGatedTrade(
     });
 
     if (result?.success) {
+      const lots = Math.max(0.01, Math.min(analysis.suggestedPositionSize, 200));
+      const orderId = result.order_id ?? result.orderId;
+
       registerPositionWatch({
         symbol: symbolNorm,
         direction,
         entryPrice: parseEntryPrice(analysis),
         stopLoss: analysis.suggestedStopLoss!,
         takeProfit: analysis.suggestedTakeProfit!,
-        ticket: result.order_id ?? result.orderId,
+        ticket: orderId,
         source,
         recommendation: analysis.recommendation,
+        analysisId: gatedEngineAdapter.getLastAnalysisId(symbolNorm),
+      });
+
+      void persistExecutedTrade({
+        symbol: symbolNorm,
+        analysis,
+        direction,
+        lotSize: lots,
+        orderId,
+        source,
       });
 
       void notifyTradeExecutedClient({
         symbol: symbolNorm,
         direction,
-        lots: Math.max(0.01, Math.min(analysis.suggestedPositionSize, 200)),
+        lots,
         entry: parseEntryPrice(analysis),
         stopLoss: analysis.suggestedStopLoss!,
         takeProfit: analysis.suggestedTakeProfit!,
-        orderId: result.order_id ?? result.orderId,
+        orderId,
         score: analysis.overallScore,
         confidence: analysis.confidence,
         gatePassed: analysis.gateStatus?.executionPermitted ?? true,

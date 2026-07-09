@@ -21,6 +21,7 @@ import {
   requestAlertModeEnable,
 } from '@/lib/alert-mode-service';
 import { BridgePairingPanel } from '@/components/BridgePairingPanel';
+import { BridgeConnectionTest } from '@/components/BridgeConnectionTest';
 import { useBridgePresence } from '@/context/BridgeContext';
 import { normalizeBridgeBaseUrl } from '@/config/bridge-config';
 import {
@@ -277,6 +278,7 @@ export function Settings() {
               )}
             </div>
             <BridgePairingPanel />
+            <BridgeConnectionTest />
             <div className="border-t border-[#1e2738] pt-4">
               <label className="block text-sm text-gray-400 mb-2">Share account (Firebase UID)</label>
               <input

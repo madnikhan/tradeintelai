@@ -8,11 +8,11 @@ import { SmartScoreCard } from '@/components/SmartScoreCard';
 import { RiskMonitor } from '@/components/RiskMonitor';
 import { PositionWatchPanel } from '@/components/PositionWatchPanel';
 import { useTradingContext } from '@/context/TradingContext';
-import { BridgePresenceBanner } from '@/components/BridgePresenceBanner';
-import { ActiveAccountBanner } from '@/components/ActiveAccountBanner';
+import { BridgeStatusBar } from '@/components/BridgeStatusBar';
 import { TradeVerdictBanner } from '@/components/TradeVerdictBanner';
+import { DataProvenancePanel } from '@/components/DataProvenancePanel';
 import { AccordionItem } from '@/components/ui/Accordion';
-import type { Account } from '@/types/trading';
+import { useBridgeStatus } from '@/hooks/useBridgeStatus';
 
 interface TradeTabViewProps {
   account: Account;
@@ -21,6 +21,7 @@ interface TradeTabViewProps {
 export function TradeTabView({ account }: TradeTabViewProps) {
   const { symbol, aiAnalysis, setAiAnalysis } = useTradingContext();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const { balance, balanceLoaded } = useBridgeStatus();
 
   const handleAnalysisChange = useCallback(
     (analysis: Parameters<typeof setAiAnalysis>[0]) => {
@@ -37,9 +38,13 @@ export function TradeTabView({ account }: TradeTabViewProps) {
         isAnalyzing={isAnalyzing}
       />
 
-      <BridgePresenceBanner />
-      <ActiveAccountBanner />
-      <TradeVerdictBanner symbol={symbol} />
+      <DataProvenancePanel
+        analysis={aiAnalysis}
+        balance={balance}
+        balanceLoaded={balanceLoaded}
+      />
+
+      <BridgeStatusBar />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="lg:col-span-2 space-y-4 sm:space-y-6">
@@ -50,6 +55,10 @@ export function TradeTabView({ account }: TradeTabViewProps) {
               onAnalyzingChange={setIsAnalyzing}
             />
           </div>
+
+          <AccordionItem title="Historical edge" defaultOpen={false}>
+            <TradeVerdictBanner symbol={symbol} />
+          </AccordionItem>
 
           <AccordionItem title="Score breakdown" defaultOpen={false}>
             <SmartScoreCard analysis={aiAnalysis} symbol={symbol} compact />

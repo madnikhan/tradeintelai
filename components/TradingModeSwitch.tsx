@@ -2,6 +2,7 @@
 
 import { TradingModeManager, type Mt5AccountKind } from '@/lib/trading-mode';
 import { syncAccountFromBridge } from '@/lib/bridge-account-sync';
+import { useBridgeStatus } from '@/hooks/useBridgeStatus';
 import { TradingMode, Trade } from '@/types/trading';
 import { useState, useEffect } from 'react';
 import { assertCanGoLiveMode } from '@/lib/trade-permissions';
@@ -26,6 +27,7 @@ export function TradingModeSwitch({
 }: TradingModeSwitchProps) {
   const [currentMode, setCurrentMode] = useState<TradingMode>(TradingModeManager.getCurrentMode());
   const [mt5Kind, setMt5Kind] = useState<Mt5AccountKind>(TradingModeManager.getMt5AccountKind());
+  const bridgeStatus = useBridgeStatus();
   const [showConfirm, setShowConfirm] = useState(false);
   const [gateMessage, setGateMessage] = useState<string | null>(null);
   const isDemo = currentMode === 'demo';
@@ -95,12 +97,14 @@ export function TradingModeSwitch({
   return (
     <>
       <div className="flex items-center gap-1.5 sm:gap-2">
+        {bridgeStatus.state === 'ready' && (
         <span
           className="hidden lg:inline text-[10px] text-gray-500 px-2 py-1 rounded bg-[#141c2b] border border-[#1e2738]"
           title="Connected MetaTrader account type (demo/live from bridge). Not the same as bridge connectivity or account selection."
         >
           {mt5Label(mt5Kind)}
         </span>
+        )}
         <div
           className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold ${
             isDemo

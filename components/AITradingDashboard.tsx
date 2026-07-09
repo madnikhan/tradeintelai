@@ -14,7 +14,8 @@ import { SymbolPicker } from '@/components/trading/SymbolPicker';
 import { AccordionItem } from '@/components/ui/Accordion';
 import { toCompactSymbol } from '@/lib/trading-symbols';
 import { getChartVisionCache } from '@/lib/chart-vision-cache';
-import { useActiveMt5AccountLogin, EXECUTE_ACCOUNT_TOOLTIP } from '@/components/ActiveAccountBanner';
+import { useBridgeStatus } from '@/hooks/useBridgeStatus';
+import { DataProvenancePanel } from '@/components/DataProvenancePanel';
 import type { ChartAnalysis } from '@/lib/ai-types';
 import type { GPTStructureAnalysis } from '@/lib/gated-trading-engine';
 
@@ -42,8 +43,12 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
   const [usingCachedScan, setUsingCachedScan] = useState(false);
   const [chartVisionApplied, setChartVisionApplied] = useState(false);
   const visionRefreshRef = useRef<{ symbol: string; updatedAt: number } | null>(null);
-  const activeMt5Login = useActiveMt5AccountLogin();
-  const canExecuteToMt5 = activeMt5Login != null;
+  const {
+    canExecute: canExecuteToMt5,
+    fixHint: executeBlockedHint,
+    balance,
+    balanceLoaded,
+  } = useBridgeStatus();
 
   // Hydrate from Scan handoff or latest scan cache when symbol matches
   useEffect(() => {
@@ -642,10 +647,8 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
 
           {/* Gate Status Display */}
           {analysis.gateStatus && (
-            <div className="bg-[#141c2b] rounded-xl border border-[#1e2738] p-5 sm:p-6">
-              <h3 className="text-base sm:text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <span>🚪</span> Gate Status
-              </h3>
+            <AccordionItem title="Gate status (Gates 1–4)" defaultOpen={false}>
+            <div className="bg-[#141c2b] rounded-xl border border-[#1e2738] p-5 sm:p-6 mt-2">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Gate 1: Market Readability */}
                 <div className={`p-4 rounded-lg border ${
@@ -807,6 +810,7 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
                 </div>
               )}
             </div>
+            </AccordionItem>
           )}
 
           {/* AI Explanation (GPT-powered) */}
@@ -1028,7 +1032,7 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
 
           {accountBlocked && !executionBlocked && analysis && (
             <p className="text-xs text-amber-400/90 mb-2 text-center">
-              {EXECUTE_ACCOUNT_TOOLTIP}
+              {executeBlockedHint}
             </p>
           )}
 
@@ -1038,7 +1042,7 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
             disabled={executeDisabled}
             title={
               accountBlocked
-                ? EXECUTE_ACCOUNT_TOOLTIP
+                ? executeBlockedHint
                 : executionBlocked && analysis.gateStatus?.executionBlockedBy?.length
                 ? analysis.gateStatus.executionBlockedBy.join('; ')
                 : undefined

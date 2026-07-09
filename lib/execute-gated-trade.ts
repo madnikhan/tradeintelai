@@ -12,6 +12,7 @@ import { assertCanTrade } from '@/lib/trade-permissions';
 import { syncAccountFromBridge } from '@/lib/bridge-account-sync';
 import { fetchBridgeCredentials } from '@/lib/bridge-watch-client';
 import { formatBridgeNetworkError, getBridgeBaseUrl } from '@/config/bridge-config';
+import { fetchBridgeStatusSnapshot } from '@/lib/bridge-status';
 import type { ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
 
 export interface ExecuteGatedTradeParams {
@@ -133,6 +134,14 @@ export async function executeGatedTrade(
   const permission = await assertCanTrade();
   if (!permission.allowed) {
     return { success: false, error: permission.error ?? 'Trade not permitted' };
+  }
+
+  const bridgeStatus = await fetchBridgeStatusSnapshot();
+  if (!bridgeStatus.canExecute) {
+    return {
+      success: false,
+      error: bridgeStatus.fixHint || bridgeStatus.label,
+    };
   }
 
   await fetchBridgeCredentials();

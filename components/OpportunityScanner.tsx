@@ -10,8 +10,8 @@ import { TRADING_RULES } from '@/config/trading-rules';
 import { TradingHoursFilter } from '@/lib/trading-hours';
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { EmptyState } from '@/components/EmptyState';
-import { BridgePresenceBanner } from '@/components/BridgePresenceBanner';
-import { ActiveAccountBanner, useActiveMt5AccountLogin, EXECUTE_ACCOUNT_TOOLTIP } from '@/components/ActiveAccountBanner';
+import { BridgeStatusBar } from '@/components/BridgeStatusBar';
+import { useBridgeStatus } from '@/hooks/useBridgeStatus';
 import { TradeVerdictBanner } from '@/components/TradeVerdictBanner';
 import {
   getAutoScanEnabled,
@@ -118,8 +118,11 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; status?: number; error?: string }>>({});
   const [scanHealth, setScanHealth] = useState<ScanHealthSummary | null>(null);
   const [lastScanUsedChart, setLastScanUsedChart] = useState(false);
-  const activeMt5Login = useActiveMt5AccountLogin();
-  const canExecuteToMt5 = activeMt5Login != null;
+  const {
+    activeAccountLogin: activeMt5Login,
+    canExecute: canExecuteToMt5,
+    fixHint: executeBlockedHint,
+  } = useBridgeStatus();
 
   // Executable opportunities: same rules as Trade tab validateGatedExecution (gate path)
   const isExecutableOpportunity = isScannerExecutableOpportunity;
@@ -137,7 +140,7 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
       setQuickExecuteMessage({
         symbol: displaySymbol,
         success: false,
-        text: EXECUTE_ACCOUNT_TOOLTIP,
+        text: executeBlockedHint || 'Bridge not ready for execution',
       });
       setTimeout(() => setQuickExecuteMessage(null), 8000);
       return;
@@ -579,9 +582,8 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
 
   return (
     <div className="bg-[#0d1321] rounded-xl border border-[#1e2738] p-6">
-      <div className="mb-4 space-y-3">
-        <BridgePresenceBanner />
-        <ActiveAccountBanner />
+      <div className="mb-4">
+        <BridgeStatusBar />
       </div>
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -855,95 +857,64 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
         </div>
       )}
 
-      {/* In-app toast for strong signals */}
-      {activeAlert && activeAlert.length > 0 && !alarmAcknowledged && (
-        <div
-          role="alert"
-          aria-live="polite"
-          className="mb-4 p-4 rounded-xl border-2 border-amber-500/50 bg-gradient-to-r from-red-600/20 via-orange-500/20 to-red-600/20"
+      {/* Scan result summary (single line) */}
+      {opportunities.length > 0 && lastScanTime && (
+        <p
+          className={`mb-4 text-sm rounded-lg px-4 py-3 border ${
+            hasStrongSignals
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+              : 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+          }`}
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <p className="font-bold text-white">
-                Strong signal: {activeAlert[0].symbol} — {activeAlert[0].recommendation}
-              </p>
-              <p className="text-sm text-secondary">
-                Score {activeAlert[0].score}, confidence {activeAlert[0].confidence}%
-                {activeAlert.length > 1 ? ` (+${activeAlert.length - 1} more)` : ''}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={acknowledgeAlert}
-              className="btn btn-primary min-h-[44px] shrink-0"
-            >
-              Acknowledge
-            </button>
-          </div>
-        </div>
-      )}
-
-
-      {/* Strong Signals Found Banner */}
-      {hasStrongSignals && (
-        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 mb-6 animate-pulse">
-          <div className="flex items-center gap-3">
-            <div className="text-2xl">🎯</div>
-            <div className="flex-1">
-              <h3 className="text-emerald-400 font-bold text-lg">
-                {validOpportunities.length} Strong Signal{validOpportunities.length > 1 ? 's' : ''} Found!
-              </h3>
-              <p className="text-sm text-gray-400 mt-1">
-                Top opportunity: <span className="text-emerald-400 font-bold">{bestOpportunity.symbol}</span> - {bestOpportunity.recommendation} 
-                (Score: {bestOpportunity.score}, Confidence: {bestOpportunity.confidence}%)
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Warning Banner */}
-      {!hasStrongSignals && opportunities.length > 0 && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-6">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">⚠️</span>
-            <div className="flex-1">
-              <h3 className="text-amber-400 font-bold mb-2">No executable signals</h3>
-              <p className="text-sm text-gray-400 mb-2">
-                Scan completed — {opportunities.length} pair{opportunities.length > 1 ? 's' : ''} analyzed.
-                Executable = Gate 4 passed, not HOLD, confidence ≥{SCANNER_MIN_CONFIDENCE_GATE}% (same as Trade tab).
-              </p>
-              {nearMissOpportunities.length > 0 && (
-                <div className="mb-3 p-3 rounded-lg bg-[#141c2b] border border-[#1e2738]">
-                  <p className="text-xs text-gray-500 mb-2">Closest to executable (by confidence):</p>
-                  <ul className="text-sm text-gray-300 space-y-1.5">
-                    {nearMissOpportunities.map((opp) => (
-                      <li key={opp.symbol}>
-                        <span className="text-white font-medium">{opp.symbol}</span>
-                        {' — '}
-                        {opp.recommendation}, {opp.confidence}% conf
-                        <span className="text-amber-400/90">
-                          {' '}
-                          · {formatPairBlockReason(opp)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+          {hasStrongSignals && bestOpportunity ? (
+            <>
+              <span className="font-medium">
+                {validOpportunities.length} executable signal
+                {validOpportunities.length > 1 ? 's' : ''}
+              </span>
+              {' — '}
+              Best: {bestOpportunity.symbol} {bestOpportunity.recommendation} (score{' '}
+              {bestOpportunity.score}, {bestOpportunity.confidence}% conf)
+              {activeAlert && activeAlert.length > 0 && !alarmAcknowledged && (
+                <span className="block text-xs mt-1 text-amber-300/90">
+                  Alert: {activeAlert[0].symbol} — tap Acknowledge below to dismiss
+                </span>
               )}
-              <ul className="text-sm text-gray-400 space-y-1 list-disc list-inside">
-                <li>Prime session liquidity does not bypass Gate 4 — structure and bias must align</li>
-                <li>See &quot;Blocked because&quot; column in the table below for each pair</li>
-              </ul>
-            </div>
-          </div>
+            </>
+          ) : (
+            <>
+              <span className="font-medium">No executable signals</span>
+              {' — '}
+              {opportunities.length} pair{opportunities.length > 1 ? 's' : ''} analyzed. Gate 4 +
+              confidence ≥{SCANNER_MIN_CONFIDENCE_GATE}% required (same as Trade tab).
+              {nearMissOpportunities.length > 0 && nearMissOpportunities[0] && (
+                <span className="block text-xs mt-1 text-amber-300/80">
+                  Closest: {nearMissOpportunities[0].symbol} ({nearMissOpportunities[0].confidence}%
+                  conf) — {formatPairBlockReason(nearMissOpportunities[0])}
+                </span>
+              )}
+            </>
+          )}
+        </p>
+      )}
+
+      {activeAlert && activeAlert.length > 0 && !alarmAcknowledged && (
+        <div className="mb-4 flex justify-end">
+          <button
+            type="button"
+            onClick={acknowledgeAlert}
+            className="text-xs text-cyan-400 hover:underline min-h-[44px] px-3"
+          >
+            Acknowledge signal alert
+          </button>
         </div>
       )}
 
+      {/* legacy banners removed — see scan result summary above */}
       {/* Scan health panel */}
       {scanHealth && opportunities.length > 0 && (
         <div className="mb-6 p-4 rounded-lg bg-[#141c2b] border border-[#1e2738]">
-          <h4 className="text-sm font-medium text-white mb-2">Scan data health</h4>
+          <h4 className="text-sm font-medium text-white mb-2">Data sources for this scan</h4>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-gray-400">
             <div>
               <span className="text-gray-500">OHLC source</span>
@@ -984,10 +955,12 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
               Chart vision fed Gate 1 on {scanHealth.chartVisionCount} pair(s) (uses API credits).
             </p>
           )}
+          <p className="text-xs text-gray-500 mt-3 border-t border-[#1e2738] pt-2">
+            Fundamentals: Trading Economics scrape (non-USD pairs); USD leg is stubbed → neutral 50.
+            Sentiment: RSS news feeds. Technical: computed locally from OHLC bars above.
+          </p>
         </div>
       )}
-
-      {/* Trading Hours Status */}
       <div className={`mb-6 p-4 rounded-lg ${
         tradingHours.quality === 'PRIME' ? 'bg-green-500/10 border border-green-500/30' :
         tradingHours.quality === 'GOOD' ? 'bg-cyan-500/10 border border-cyan-500/30' :
@@ -1086,7 +1059,7 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
                   !canExecuteToMt5 ||
                   quickExecuting === bestOpportunity.symbol.replace('/', '')
                 }
-                title={!canExecuteToMt5 ? EXECUTE_ACCOUNT_TOOLTIP : undefined}
+                title={!canExecuteToMt5 ? executeBlockedHint : undefined}
                 className="btn btn-primary text-sm min-h-[40px] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {quickExecuting === bestOpportunity.symbol.replace('/', '')
@@ -1253,7 +1226,7 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
                               !canExecuteToMt5 ||
                               quickExecuting === opp.symbol.replace('/', '')
                             }
-                            title={!canExecuteToMt5 ? EXECUTE_ACCOUNT_TOOLTIP : undefined}
+                            title={!canExecuteToMt5 ? executeBlockedHint : undefined}
                             className="text-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {quickExecuting === opp.symbol.replace('/', '')

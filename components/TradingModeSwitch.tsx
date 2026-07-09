@@ -1,6 +1,7 @@
 'use client';
 
 import { TradingModeManager, type Mt5AccountKind } from '@/lib/trading-mode';
+import { syncAccountFromBridge } from '@/lib/bridge-account-sync';
 import { TradingMode, Trade } from '@/types/trading';
 import { useState, useEffect } from 'react';
 import { assertCanGoLiveMode } from '@/lib/trade-permissions';
@@ -15,7 +16,7 @@ interface TradingModeSwitchProps {
 function mt5Label(kind: Mt5AccountKind): string {
   if (kind === 'demo') return 'MT5: Demo';
   if (kind === 'live') return 'MT5: Live';
-  return 'MT5: Not connected';
+  return 'MT5: type unknown';
 }
 
 export function TradingModeSwitch({
@@ -34,15 +35,18 @@ export function TradingModeSwitch({
       setCurrentMode(TradingModeManager.getCurrentMode());
       setMt5Kind(TradingModeManager.getMt5AccountKind());
     };
+    void syncAccountFromBridge().then(sync);
     const interval = setInterval(sync, 2000);
     sync();
 
     const handleModeChange = () => sync();
     window.addEventListener('tradingModeChanged', handleModeChange);
+    window.addEventListener('mt5AccountChanged', handleModeChange);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('tradingModeChanged', handleModeChange);
+      window.removeEventListener('mt5AccountChanged', handleModeChange);
     };
   }, []);
 
@@ -93,7 +97,7 @@ export function TradingModeSwitch({
       <div className="flex items-center gap-1.5 sm:gap-2">
         <span
           className="hidden lg:inline text-[10px] text-gray-500 px-2 py-1 rounded bg-[#141c2b] border border-[#1e2738]"
-          title="Connected MetaTrader account type (from bridge)"
+          title="Connected MetaTrader account type (demo/live from bridge). Not the same as bridge connectivity or account selection."
         >
           {mt5Label(mt5Kind)}
         </span>

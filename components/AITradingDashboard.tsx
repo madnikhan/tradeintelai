@@ -13,6 +13,7 @@ import { SymbolPicker } from '@/components/trading/SymbolPicker';
 import { AccordionItem } from '@/components/ui/Accordion';
 import { toCompactSymbol } from '@/lib/trading-symbols';
 import { getChartVisionCache } from '@/lib/chart-vision-cache';
+import { useActiveMt5AccountLogin, EXECUTE_ACCOUNT_TOOLTIP } from '@/components/ActiveAccountBanner';
 import type { ChartAnalysis } from '@/lib/ai-types';
 import type { GPTStructureAnalysis } from '@/lib/gated-trading-engine';
 
@@ -40,6 +41,8 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
   const [usingCachedScan, setUsingCachedScan] = useState(false);
   const [chartVisionApplied, setChartVisionApplied] = useState(false);
   const visionRefreshRef = useRef<{ symbol: string; updatedAt: number } | null>(null);
+  const activeMt5Login = useActiveMt5AccountLogin();
+  const canExecuteToMt5 = activeMt5Login != null;
 
   // Hydrate from TradingContext when opening from Scan tab
   useEffect(() => {
@@ -259,6 +262,8 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
     !analysis ||
     analysis.recommendation === 'HOLD' ||
     (analysis.gateStatus != null && !analysis.gateStatus.executionPermitted);
+  const accountBlocked = !canExecuteToMt5;
+  const executeDisabled = isExecuting || executionBlocked || accountBlocked;
 
   const executeAITrade = async () => {
     if (!analysis) return;
@@ -995,28 +1000,43 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
           {usingCachedScan && (
             <p className="text-xs text-cyan-400/80 mb-2 text-center">
               Using analysis from Scan — Re-analyze for a fresh signal
+              {analysis.dataHealth?.usedChartVision && (
+                <span className="block mt-1 text-purple-300/90">
+                  Analysis includes chart vision from scan
+                </span>
+              )}
+            </p>
+          )}
+
+          {accountBlocked && !executionBlocked && analysis && (
+            <p className="text-xs text-amber-400/90 mb-2 text-center">
+              {EXECUTE_ACCOUNT_TOOLTIP}
             </p>
           )}
 
           {/* Execute Button */}
           <button
             onClick={executeAITrade}
-            disabled={isExecuting || executionBlocked}
+            disabled={executeDisabled}
             title={
-              executionBlocked && analysis.gateStatus?.executionBlockedBy?.length
+              accountBlocked
+                ? EXECUTE_ACCOUNT_TOOLTIP
+                : executionBlocked && analysis.gateStatus?.executionBlockedBy?.length
                 ? analysis.gateStatus.executionBlockedBy.join('; ')
                 : undefined
             }
             className={`w-full py-4 sm:py-5 rounded-xl font-bold text-base sm:text-lg text-white transition-all touch-manipulation min-h-[56px] flex items-center justify-center ${
-              !executionBlocked && analysis.recommendation.includes('BUY')
+              !executeDisabled && analysis.recommendation.includes('BUY')
                 ? 'bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 hover:to-green-400 active:from-emerald-600 active:to-green-600 shadow-lg shadow-emerald-500/20'
-                : !executionBlocked && analysis.recommendation.includes('SELL')
+                : !executeDisabled && analysis.recommendation.includes('SELL')
                 ? 'bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-400 hover:to-red-400 active:from-rose-600 active:to-red-600 shadow-lg shadow-rose-500/20'
                 : 'bg-gray-700 cursor-not-allowed text-gray-500'
             } disabled:bg-gray-700 disabled:cursor-not-allowed disabled:text-gray-500`}
           >
             {isExecuting
               ? '↻ Executing...'
+              : accountBlocked
+              ? 'SELECT MT5 ACCOUNT TO EXECUTE'
               : executionBlocked
               ? 'EXECUTION BLOCKED — SEE GATE 4'
               : `Execute ${analysis.recommendation}`}

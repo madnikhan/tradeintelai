@@ -9,6 +9,7 @@ import { notifyTradeExecutedClient } from '@/lib/notifications/client-notify';
 import { persistExecutedTrade } from '@/lib/trade-execution-persistence';
 import { gatedEngineAdapter } from '@/lib/gated-engine-adapter';
 import { assertCanTrade } from '@/lib/trade-permissions';
+import { syncAccountFromBridge } from '@/lib/bridge-account-sync';
 import { fetchBridgeCredentials } from '@/lib/bridge-watch-client';
 import type { ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
 
@@ -127,6 +128,7 @@ export async function executeGatedTrade(
     }
   }
 
+  await syncAccountFromBridge();
   const permission = await assertCanTrade();
   if (!permission.allowed) {
     return { success: false, error: permission.error ?? 'Trade not permitted' };

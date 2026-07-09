@@ -9,6 +9,7 @@ import { RiskMonitor } from '@/components/RiskMonitor';
 import { PositionWatchPanel } from '@/components/PositionWatchPanel';
 import { useTradingContext } from '@/context/TradingContext';
 import { BridgePresenceBanner } from '@/components/BridgePresenceBanner';
+import { ActiveAccountBanner } from '@/components/ActiveAccountBanner';
 import { TradeVerdictBanner } from '@/components/TradeVerdictBanner';
 import { AccordionItem } from '@/components/ui/Accordion';
 import type { Account } from '@/types/trading';
@@ -37,6 +38,7 @@ export function TradeTabView({ account }: TradeTabViewProps) {
       />
 
       <BridgePresenceBanner />
+      <ActiveAccountBanner />
       <TradeVerdictBanner symbol={symbol} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">

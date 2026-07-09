@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { accountManager, MT5Account } from '@/lib/account-manager';
-import { httpBridge } from '@/lib/http-bridge-connector';
 import { createMt5Account, findAccountByLogin } from '@/lib/firebase/mt5-accounts';
 import { loadUserBridgeSettings } from '@/lib/firebase/user-bridge-settings';
+import { syncAccountFromBridge } from '@/lib/bridge-account-sync';
 
 export function AccountSelector() {
   const [accounts, setAccounts] = useState<MT5Account[]>([]);
@@ -23,13 +23,9 @@ export function AccountSelector() {
     void (async () => {
       await loadUserBridgeSettings();
       await accountManager.syncFromFirestore();
+      const sync = await syncAccountFromBridge();
+      setBridgeConnected(sync.bridgeConnected);
       loadAccounts();
-      try {
-        const info = await httpBridge.getAccountInfo();
-        setBridgeConnected(Boolean(info.success));
-      } catch {
-        setBridgeConnected(false);
-      }
     })();
   }, []);
 
@@ -103,6 +99,9 @@ export function AccountSelector() {
       await applyBridgeForLogin(account.login);
     }
     loadAccounts();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('mt5AccountChanged'));
+    }
     refreshAccountData();
   };
 
@@ -115,40 +114,9 @@ export function AccountSelector() {
 
   const refreshAccountData = async () => {
     try {
-      const accountInfo = await httpBridge.getAccountInfo();
-      if (accountInfo.success && accountInfo.login) {
-        setBridgeConnected(true);
-        accountManager.updateAccountData(accountInfo.login, {
-          balance: accountInfo.balance,
-          equity: accountInfo.equity,
-          currency: accountInfo.currency,
-        });
-        // Auto-detect and update trading mode from MT5 account type
-        const { TradingModeManager } = await import('@/lib/trading-mode');
-        let detectedMode: 'demo' | 'live' = 'live'; // Default to live
-        
-        if (accountInfo.account_type) {
-          // Use account_type from EA if available
-          detectedMode = accountInfo.account_type === 'demo' ? 'demo' : 'live';
-          console.log(`🔍 AccountSelector: Auto-detected mode from account_type: ${detectedMode}`);
-        } else if (accountInfo.server) {
-          // Fallback: detect from server name
-          const serverName = accountInfo.server.toLowerCase();
-          if (serverName.includes('demo')) {
-            detectedMode = 'demo';
-          } else {
-            detectedMode = 'live';
-          }
-          console.log(`🔍 AccountSelector: Auto-detected mode from server name: ${detectedMode} (server: ${accountInfo.server})`);
-        }
-        
-        TradingModeManager.setMt5AccountKind(detectedMode);
-        TradingModeManager.applyDetectedModeFromMt5(detectedMode);
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('tradingModeChanged', { detail: { mode: TradingModeManager.getCurrentMode() } })
-          );
-        }
+      const sync = await syncAccountFromBridge();
+      setBridgeConnected(sync.bridgeConnected);
+      if (sync.bridgeConnected) {
         loadAccounts();
       }
     } catch (error) {
@@ -157,19 +125,17 @@ export function AccountSelector() {
     }
   };
 
-  // Auto-refresh active account data
+  // Refresh bridge account on mount and periodically (even before manual activation)
   useEffect(() => {
-    if (activeAccount) {
-      refreshAccountData();
-      const interval = setInterval(refreshAccountData, 30000); // Every 30s
-      return () => clearInterval(interval);
-    }
-  }, [activeAccount?.id]);
+    void refreshAccountData();
+    const interval = setInterval(refreshAccountData, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const headerLabel = activeAccount
     ? activeAccount.name
     : bridgeConnected
-      ? 'MT5 Connected'
+      ? 'MT5 connected — select account'
       : bridgeConnected === false
         ? 'Bridge offline'
         : 'Checking…';

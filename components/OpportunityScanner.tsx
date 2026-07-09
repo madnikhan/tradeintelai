@@ -11,6 +11,7 @@ import { TradingHoursFilter } from '@/lib/trading-hours';
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { BridgePresenceBanner } from '@/components/BridgePresenceBanner';
+import { ActiveAccountBanner, useActiveMt5AccountLogin, EXECUTE_ACCOUNT_TOOLTIP } from '@/components/ActiveAccountBanner';
 import { TradeVerdictBanner } from '@/components/TradeVerdictBanner';
 import {
   getAutoScanEnabled,
@@ -117,6 +118,8 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; status?: number; error?: string }>>({});
   const [scanHealth, setScanHealth] = useState<ScanHealthSummary | null>(null);
   const [lastScanUsedChart, setLastScanUsedChart] = useState(false);
+  const activeMt5Login = useActiveMt5AccountLogin();
+  const canExecuteToMt5 = activeMt5Login != null;
 
   // Executable opportunities: same rules as Trade tab validateGatedExecution (gate path)
   const isExecutableOpportunity = isScannerExecutableOpportunity;
@@ -130,6 +133,15 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
   };
 
   const quickExecute = async (displaySymbol: string) => {
+    if (!canExecuteToMt5) {
+      setQuickExecuteMessage({
+        symbol: displaySymbol,
+        success: false,
+        text: EXECUTE_ACCOUNT_TOOLTIP,
+      });
+      setTimeout(() => setQuickExecuteMessage(null), 8000);
+      return;
+    }
     const sym = displaySymbol.replace('/', '');
     const cached = gatedEngineAdapter.getCachedAnalysis(sym);
     if (!cached) {
@@ -567,8 +579,9 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
 
   return (
     <div className="bg-[#0d1321] rounded-xl border border-[#1e2738] p-6">
-      <div className="mb-4">
+      <div className="mb-4 space-y-3">
         <BridgePresenceBanner />
+        <ActiveAccountBanner />
       </div>
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -587,6 +600,8 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
             {lastScanTime && (
               <span className="block text-xs text-gray-500 mt-1">
                 Last scan: {lastScanTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                {' · '}
+                {lastScanUsedChart ? 'with chart vision' : 'OHLC only (no vision credits)'}
                 {' · '}
                 Uses same gated engine as Trade tab (Signal vs Executable)
               </span>
@@ -943,8 +958,17 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
               </p>
             </div>
             <div>
-              <span className="text-gray-500">OHLC structure</span>
-              <p className="text-gray-200">{scanHealth.ohlcStructureCount} pairs (no vision credits)</p>
+              <span className="text-gray-500">Structure source</span>
+              <p className="text-gray-200">
+                {scanHealth.withChart
+                  ? `Chart vision: ${scanHealth.chartVisionCount} pair(s)`
+                  : `OHLC rules: ${scanHealth.ohlcStructureCount} pair(s)`}
+              </p>
+              {scanHealth.withChart && scanHealth.ohlcStructureCount === 0 && (
+                <p className="text-[10px] text-gray-500 mt-0.5">
+                  Vision replaces OHLC structure path when chart scan is used
+                </p>
+              )}
             </div>
             <div>
               <span className="text-gray-500">Technical fallback</span>
@@ -955,9 +979,9 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
               </p>
             </div>
           </div>
-          {scanHealth.withChart && (
+          {scanHealth.withChart && scanHealth.chartVisionCount > 0 && (
             <p className="text-xs text-purple-300 mt-2">
-              Chart vision used on {scanHealth.chartVisionCount} pair(s).
+              Chart vision fed Gate 1 on {scanHealth.chartVisionCount} pair(s) (uses API credits).
             </p>
           )}
         </div>
@@ -1058,12 +1082,18 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
               <button
                 type="button"
                 onClick={() => void quickExecute(bestOpportunity.symbol)}
-                disabled={quickExecuting === bestOpportunity.symbol.replace('/', '')}
-                className="btn btn-primary text-sm min-h-[40px]"
+                disabled={
+                  !canExecuteToMt5 ||
+                  quickExecuting === bestOpportunity.symbol.replace('/', '')
+                }
+                title={!canExecuteToMt5 ? EXECUTE_ACCOUNT_TOOLTIP : undefined}
+                className="btn btn-primary text-sm min-h-[40px] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {quickExecuting === bestOpportunity.symbol.replace('/', '')
                   ? 'Executing…'
-                  : `Quick execute ${bestOpportunity.recommendation}`}
+                  : !canExecuteToMt5
+                    ? 'Select MT5 account to execute'
+                    : `Quick execute ${bestOpportunity.recommendation}`}
               </button>
             )}
           </div>
@@ -1219,12 +1249,18 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
                           <button
                             type="button"
                             onClick={() => void quickExecute(opp.symbol)}
-                            disabled={quickExecuting === opp.symbol.replace('/', '')}
-                            className="text-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
+                            disabled={
+                              !canExecuteToMt5 ||
+                              quickExecuting === opp.symbol.replace('/', '')
+                            }
+                            title={!canExecuteToMt5 ? EXECUTE_ACCOUNT_TOOLTIP : undefined}
+                            className="text-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {quickExecuting === opp.symbol.replace('/', '')
                               ? '…'
-                              : 'Execute'}
+                              : canExecuteToMt5
+                                ? 'Execute'
+                                : 'No account'}
                           </button>
                         )}
                       </td>

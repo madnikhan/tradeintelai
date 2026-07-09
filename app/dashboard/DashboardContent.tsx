@@ -30,6 +30,7 @@ import { QuickActionsMenu } from '@/components/QuickActionsMenu'
 import { keyboardShortcuts } from '@/lib/keyboard-shortcuts'
 import { useSwipeGesture, attachSwipeListeners } from '@/lib/touch-gestures'
 import { logger } from '@/lib/logger'
+import { syncAccountFromBridge } from '@/lib/bridge-account-sync'
 import { getBridgeUrl } from '@/config/bridge-config'
 import { AuthButton } from '@/components/AuthButton'
 import { BridgeSetupBanner } from '@/components/BridgeSetupBanner'
@@ -215,43 +216,34 @@ export default function DashboardContent() {
         }
         
         // Accept balance even if 0 (valid for some accounts) - only check if it's a valid number
-        if (accountInfo.success && accountInfo.balance !== undefined && accountInfo.balance !== null && !isNaN(accountInfo.balance)) {
-          // Auto-detect trading mode from MT5 account type
-          let detectedMode: 'demo' | 'live' = 'live' // Default to live
-          
-          let mt5Kind: 'demo' | 'live' | 'unknown' = 'unknown'
-          if (accountInfo.account_type) {
-            detectedMode = accountInfo.account_type === 'demo' ? 'demo' : 'live'
-            mt5Kind = detectedMode
-            logger.debug(`🔍 Auto-detected trading mode from MT5 account_type: ${detectedMode}`)
-          } else if (accountInfo.server) {
-            const serverName = accountInfo.server.toLowerCase()
-            if (serverName.includes('demo')) {
-              detectedMode = 'demo'
-              mt5Kind = 'demo'
-              logger.debug(`🔍 Auto-detected trading mode from server name: ${detectedMode} (server: ${accountInfo.server})`)
-            } else {
-              detectedMode = 'live'
-              mt5Kind = 'live'
-              logger.debug(`🔍 Auto-detected trading mode from server name: ${detectedMode} (server: ${accountInfo.server})`)
-            }
+        if (accountInfo.success) {
+          await syncAccountFromBridge(accountInfo)
+
+          if (
+            accountInfo.balance !== undefined &&
+            accountInfo.balance !== null &&
+            !isNaN(accountInfo.balance)
+          ) {
+            const realBalance = accountInfo.balance
+            const realEquity = accountInfo.equity || accountInfo.balance
+
+            setAccount(prev => ({
+              ...prev,
+              balance: realBalance,
+              equity: realEquity,
+            }))
+
+            TradingModeManager.setRealBalance(realBalance)
+            hasLoadedBalanceRef.current = true
+            console.log('✅ [Dashboard] Real MT5 balance loaded:', realBalance, 'Equity:', realEquity, 'Login:', accountInfo.login, 'Server:', accountInfo.server)
+            logger.info(`✅ Real MT5 balance loaded: ${realBalance} Equity: ${realEquity} Login: ${accountInfo.login} Server: ${accountInfo.server}`)
+          } else {
+            logger.warn('⚠️ MT5 account synced but balance missing:', {
+              login: accountInfo.login,
+              server: accountInfo.server,
+              balance: accountInfo.balance,
+            })
           }
-          TradingModeManager.setMt5AccountKind(mt5Kind)
-          TradingModeManager.applyDetectedModeFromMt5(detectedMode)
-          
-          const realBalance = accountInfo.balance
-          const realEquity = accountInfo.equity || accountInfo.balance
-          
-          setAccount(prev => ({
-            ...prev,
-            balance: realBalance,
-            equity: realEquity,
-          }))
-          
-          TradingModeManager.setRealBalance(realBalance)
-          hasLoadedBalanceRef.current = true
-          console.log('✅ [Dashboard] Real MT5 balance loaded:', realBalance, 'Equity:', realEquity, 'Login:', accountInfo.login, 'Server:', accountInfo.server)
-          logger.info(`✅ Real MT5 balance loaded: ${realBalance} Equity: ${realEquity} Login: ${accountInfo.login} Server: ${accountInfo.server}`)
         } else {
           // Balance not loaded - log detailed error for debugging
           console.error('❌ [Dashboard] MT5 balance not loaded. Response details:', {
@@ -272,7 +264,7 @@ export default function DashboardContent() {
             bridgeUrl: accountInfo.bridgeUrl || bridgeUrl,
             fullResponse: accountInfo
           })
-          
+
           if (accountInfo.error) {
             if (accountInfo.error.includes('timeout') || accountInfo.error.includes('Timeout') || accountInfo.error.includes('not responding')) {
               console.error('⏱️ [Dashboard] MT5 EA timeout - EA may not be processing account info commands. Check:')
@@ -289,14 +281,12 @@ export default function DashboardContent() {
               console.error('❌ [Dashboard] MT5 Bridge error:', accountInfo.error)
               logger.error('❌ MT5 Bridge error:', accountInfo.error)
             }
-          } else if (!accountInfo.success) {
+          } else {
             console.error('❌ [Dashboard] Account info request failed. Bridge URL:', accountInfo.bridgeUrl || bridgeUrl)
             console.error('❌ [Dashboard] Full response:', JSON.stringify(accountInfo, null, 2))
             logger.error('❌ Account info request failed. Check bridge logs for details.')
           }
           TradingModeManager.setMt5AccountKind('unknown')
-          // Don't set fake balance - keep at 0 until MT5 connects
-          // Also don't set realBalance to null - keep previous value if it was set
         }
       } catch (error: any) {
         TradingModeManager.setMt5AccountKind('unknown')

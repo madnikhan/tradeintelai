@@ -165,6 +165,32 @@ export async function retryWithBackoff<T>(
 /**
  * Full URL for a bridge endpoint (uses live base URL each call).
  */
+/** User-facing hint when browser cannot reach the home bridge (tunnel down, wrong URL). */
+export function formatBridgeNetworkError(error: unknown): string {
+  const msg = error instanceof Error ? error.message : String(error);
+  const bridgeUrl = getBridgeBaseUrl();
+  const isHttpsPage =
+    typeof window !== 'undefined' && window.location.protocol === 'https:';
+  const isLocalBridge = /localhost|127\.0\.0\.1/i.test(bridgeUrl);
+
+  if (
+    msg === 'Failed to fetch' ||
+    msg.includes('NetworkError') ||
+    msg.includes('Load failed')
+  ) {
+    if (isHttpsPage && isLocalBridge) {
+      return `Cannot reach bridge at ${bridgeUrl}. From Vercel you must use a Cloudflare/ngrok tunnel — open Setup and pair your home bridge, or add ?bridge_url=https://YOUR-TUNNEL to the dashboard URL.`;
+    }
+    return `Cannot reach home bridge at ${bridgeUrl}. Start TradeIntel Bridge + tunnel on your PC and confirm Setup shows bridge online.`;
+  }
+
+  if (msg.includes('timeout') || msg.includes('Timeout') || msg.includes('AbortError')) {
+    return `Bridge timeout at ${bridgeUrl}. MT5 EA may be busy — check Experts tab for execute_trade commands.`;
+  }
+
+  return msg;
+}
+
 export function getBridgeUrl(endpoint: string, accountLogin?: number): string {
   const base = getBridgeBaseUrl();
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;

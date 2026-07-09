@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { MarketAnalysis } from '@/lib/ai-trading-engine';
 import { gatedEngineAdapter, ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
+import type { GatedAnalysisMode } from '@/lib/gated-trading-engine';
 import { executeGatedTrade } from '@/lib/execute-gated-trade';
 import { PriceChart } from '@/components/charts/PriceChart';
 import { AIExplanation } from '@/components/AIExplanation';
@@ -44,16 +45,22 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
   const activeMt5Login = useActiveMt5AccountLogin();
   const canExecuteToMt5 = activeMt5Login != null;
 
-  // Hydrate from TradingContext when opening from Scan tab
+  // Hydrate from Scan handoff or latest scan cache when symbol matches
   useEffect(() => {
-    if (!embedded || !ctxAnalysis) return;
-    const ctxKey = ctxAnalysis.symbol?.replace(/\//g, '').toUpperCase();
+    if (!embedded) return;
     const symKey = selectedSymbol.replace(/\//g, '').toUpperCase();
-    if (ctxKey === symKey) {
-      setAnalysis(ctxAnalysis);
+    const ctxKey = ctxAnalysis?.symbol?.replace(/\//g, '').toUpperCase();
+    const fromContext = ctxAnalysis && ctxKey === symKey ? ctxAnalysis : null;
+    const fromScan = gatedEngineAdapter.getCachedAnalysis(selectedSymbol);
+    const cached = fromContext ?? fromScan;
+    if (cached) {
+      setAnalysis(cached);
       setUsingCachedScan(true);
+      if (!fromContext && fromScan) {
+        setCtxAnalysis(fromScan);
+      }
     }
-  }, [embedded, ctxAnalysis, selectedSymbol]);
+  }, [embedded, ctxAnalysis, selectedSymbol, setCtxAnalysis]);
 
   const analyzeMarket = useCallback(async (includeChart = false) => {
     setIsAnalyzing(true);
@@ -108,11 +115,18 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
       console.log(
         `📊 Chart image provided: ${chartImageBase64 ? `YES (${chartImageBase64.length} chars)` : 'NO'}; precomputed vision: ${precomputedGptStructure ? 'YES' : 'NO'}`
       );
+      const scanCached = gatedEngineAdapter.getCachedAnalysis(selectedSymbol);
+      const analysisMode: GatedAnalysisMode | undefined =
+        scanCached?.dataHealth?.analysisMode === 'scan' ? 'scan' : undefined;
+
       const marketAnalysis = await gatedEngineAdapter.analyzeMarket(
         selectedSymbol,
         [],
         chartImageBase64,
-        { precomputedGptStructure }
+        {
+          precomputedGptStructure,
+          mode: analysisMode,
+        }
       );
       
       // 🔒 DEBUG: Log GPT structure from analysis
@@ -230,6 +244,10 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
         analysis ?? (ctxKey === symKey ? (ctxAnalysis as ExtendedMarketAnalysis | null) : null);
 
       if (!currentAnalysis) return;
+
+      if (currentAnalysis.gateStatus?.executionPermitted) {
+        return;
+      }
 
       const gatePatternConf = currentAnalysis.gateStatus?.gate1Inputs?.patternConfidence ?? 0;
       const visionPatternConf =

@@ -8,7 +8,7 @@ import { convertToStructureAnalysis } from './ai-structure-analysis';
 import type { GPTStructureAnalysis } from './gated-trading-engine';
 
 export interface CachedChartVision {
-  analysis: ChartAnalysis;
+  analysis?: ChartAnalysis;
   imageBase64?: string;
   structure: GPTStructureAnalysis | undefined;
   updatedAt: number;
@@ -38,6 +38,21 @@ export function setChartVisionCache(
 
 export function getChartVisionCache(symbol: string): CachedChartVision | undefined {
   return cache.get(normalizeSymbolKey(symbol));
+}
+
+/** Cache Gate 1 structure from Scan-with-chart so Trade tab matches scan results. */
+export function setChartVisionStructureCache(
+  symbol: string,
+  structure: GPTStructureAnalysis
+): void {
+  const key = normalizeSymbolKey(symbol);
+  const existing = cache.get(key);
+  cache.set(key, {
+    analysis: existing?.analysis,
+    imageBase64: existing?.imageBase64,
+    structure,
+    updatedAt: Date.now(),
+  });
 }
 
 export function clearChartVisionCache(symbol?: string): void {

@@ -93,6 +93,11 @@ export class GatedEngineAdapter {
       chartImageBase64,
       options
     );
+
+    if (gatedAnalysis.dataHealth?.usedChartVision && gatedAnalysis.gptStructure) {
+      const { setChartVisionStructureCache } = await import('./chart-vision-cache');
+      setChartVisionStructureCache(symbol, gatedAnalysis.gptStructure);
+    }
     
     // Convert to old format with gate information
     const legacy = this.convertToLegacyFormat(gatedAnalysis);

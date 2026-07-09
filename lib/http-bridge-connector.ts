@@ -1,4 +1,9 @@
-import { BRIDGE_CONFIG, getBridgeUrl, retryWithBackoff } from '@/config/bridge-config';
+import {
+  BRIDGE_CONFIG,
+  formatBridgeNetworkError,
+  getBridgeUrl,
+  retryWithBackoff,
+} from '@/config/bridge-config';
 import { getCachedBridgeApiToken } from '@/lib/bridge-watch-client';
 import { logger } from '@/lib/logger';
 import { accountManager } from '@/lib/account-manager';
@@ -302,7 +307,7 @@ export class HTTPBridgeConnector {
       
       return {
         success: false,
-        error: error.message || 'Trade execution failed after retries',
+        error: formatBridgeNetworkError(error) || 'Trade execution failed after retries',
         details: error.toString(),
       };
     });

@@ -11,6 +11,7 @@ import { gatedEngineAdapter } from '@/lib/gated-engine-adapter';
 import { assertCanTrade } from '@/lib/trade-permissions';
 import { syncAccountFromBridge } from '@/lib/bridge-account-sync';
 import { fetchBridgeCredentials } from '@/lib/bridge-watch-client';
+import { formatBridgeNetworkError, getBridgeBaseUrl } from '@/config/bridge-config';
 import type { ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
 
 export interface ExecuteGatedTradeParams {
@@ -134,7 +135,7 @@ export async function executeGatedTrade(
     return { success: false, error: permission.error ?? 'Trade not permitted' };
   }
 
-  void fetchBridgeCredentials();
+  await fetchBridgeCredentials();
 
   const symbolNorm = symbol.replace(/\//g, '');
   const direction = analysis.recommendation.includes('BUY') ? 'BUY' : 'SELL';
@@ -187,11 +188,18 @@ export async function executeGatedTrade(
       });
     }
 
+    if (!result?.success && result?.error) {
+      return {
+        ...result,
+        error: formatBridgeNetworkError(new Error(result.error)),
+      };
+    }
     return result;
   } catch (error) {
+    const message = formatBridgeNetworkError(error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Trade execution failed',
+      error: `${message} (bridge: ${getBridgeBaseUrl()})`,
     };
   }
 }

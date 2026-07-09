@@ -55,6 +55,15 @@ export class AITradingEngine {
   private static technicalAnalysisCache: Map<string, { score: number; timestamp: number }> = new Map();
   private static readonly TECHNICAL_CACHE_TTL = 60 * 1000; // 1 minute cache
 
+  /** Inject OHLC loaded elsewhere (e.g. gated engine) so technicalAnalysis can run. */
+  setHistoricalData(data: PriceData[]): void {
+    this.historicalData = data;
+  }
+
+  getHistoricalDataLength(): number {
+    return this.historicalData.length;
+  }
+
   /**
    * Get economic calendar events with fallback (free first, then paid)
    */

@@ -8,6 +8,7 @@
 import {
   GatedMarketAnalysis,
   GatedTradingEngine,
+  GatedAnalyzeOptions,
   GPTStructureAnalysis,
   MarketReadability,
 } from './gated-trading-engine';
@@ -44,6 +45,14 @@ export interface ExtendedMarketAnalysis extends MarketAnalysis {
       empiricalSampleSize?: number;
     };
   };
+  dataHealth?: {
+    ohlcBars: number;
+    ohlcSource: 'mt5' | 'twelvedata';
+    technicalUsedFallback: boolean;
+    analysisMode: 'scan' | 'trade';
+    usedOhlcStructure: boolean;
+    usedChartVision: boolean;
+  };
 }
 
 function normalizeSymbolKey(symbol: string): string {
@@ -76,13 +85,13 @@ export class GatedEngineAdapter {
     symbol: string,
     openTrades: any[] = [],
     chartImageBase64?: string,
-    options?: { precomputedGptStructure?: GPTStructureAnalysis }
+    options?: GatedAnalyzeOptions
   ): Promise<ExtendedMarketAnalysis> {
     const gatedAnalysis = await this.gatedEngine.analyzeMarket(
       symbol,
       openTrades,
       chartImageBase64,
-      options?.precomputedGptStructure
+      options
     );
     
     // Convert to old format with gate information
@@ -122,13 +131,13 @@ export class GatedEngineAdapter {
     symbol: string,
     openTrades: any[] = [],
     chartImageBase64?: string,
-    options?: { precomputedGptStructure?: GPTStructureAnalysis }
+    options?: GatedAnalyzeOptions
   ): Promise<GatedMarketAnalysis> {
     return await this.gatedEngine.analyzeMarket(
       symbol,
       openTrades,
       chartImageBase64,
-      options?.precomputedGptStructure
+      options
     );
   }
   
@@ -206,6 +215,7 @@ export class GatedEngineAdapter {
         executionBlockedBy: gated.executionPermission.blockedBy,
         expectancyData: gated.expectancyData,
       },
+      dataHealth: gated.dataHealth,
     };
   }
   

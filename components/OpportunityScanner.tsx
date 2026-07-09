@@ -22,6 +22,7 @@ import {
   isScannerExecutableOpportunity,
   SCANNER_MIN_CONFIDENCE_GATE,
 } from '@/lib/scanner-executable';
+import { getChartVisionCache } from '@/lib/chart-vision-cache';
 // API keys are now managed server-side via environment variables
 
 interface OpportunityScannerProps {
@@ -40,6 +41,47 @@ interface Opportunity {
   strength: number;
   executionPermitted: boolean;
   executionBlockedBy: string[];
+  marketReadabilityReason?: string;
+  marketReadable?: boolean;
+  gate1Inputs?: {
+    trendStrength: number;
+    patternConfidence: number;
+    hasSupportResistance: boolean;
+    hasStrongTrend: boolean;
+    hasStrongPattern: boolean;
+  };
+  dataHealth?: {
+    ohlcBars: number;
+    ohlcSource: 'mt5' | 'twelvedata';
+    technicalUsedFallback: boolean;
+    analysisMode: 'scan' | 'trade';
+    usedOhlcStructure: boolean;
+    usedChartVision: boolean;
+  };
+}
+
+interface ScanHealthSummary {
+  pairCount: number;
+  ohlcSourceMt5: number;
+  ohlcSourceTwelveData: number;
+  technicalFallbackCount: number;
+  ohlcStructureCount: number;
+  chartVisionCount: number;
+  gate1ReadableCount: number;
+  withChart: boolean;
+}
+
+function formatPairBlockReason(opp: Opportunity): string {
+  if (!opp.executionPermitted && opp.marketReadabilityReason) {
+    return opp.marketReadabilityReason;
+  }
+  if (opp.executionBlockedBy.length > 0) {
+    return opp.executionBlockedBy.slice(0, 2).join('; ');
+  }
+  if (opp.recommendation === 'HOLD') {
+    return 'HOLD — no directional setup';
+  }
+  return 'Gate 4 not passed';
 }
 
 export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProps) {
@@ -73,6 +115,8 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
   const [showApiKeyDiagnostics, setShowApiKeyDiagnostics] = useState(false);
   const [testingKeys, setTestingKeys] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; status?: number; error?: string }>>({});
+  const [scanHealth, setScanHealth] = useState<ScanHealthSummary | null>(null);
+  const [lastScanUsedChart, setLastScanUsedChart] = useState(false);
 
   // Executable opportunities: same rules as Trade tab validateGatedExecution (gate path)
   const isExecutableOpportunity = isScannerExecutableOpportunity;
@@ -170,20 +214,37 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
     }
   }, [selectedPairs, isClient]);
 
-  const scanAllPairs = async () => {
+  const scanAllPairs = async (withChart = false) => {
     if (isScanning) return; // Prevent multiple simultaneous scans
+    const pairs = selectedPairs.length > 0 ? selectedPairs : TRADING_RULES.TRADING_PAIRS;
+
+    if (withChart) {
+      const cachedCount = pairs.filter((p) => getChartVisionCache(p.replace('/', ''))?.structure).length;
+      const visionCalls = pairs.length - cachedCount;
+      const ok = window.confirm(
+        `Scan ${pairs.length} pairs with chart vision?\n\n` +
+          `Estimated AI vision calls: ${visionCalls} (${cachedCount} may use Trade tab cache).\n` +
+          `This uses API credits. Continue?`
+      );
+      if (!ok) return;
+    }
+
     setIsScanning(true);
     setScanProgress(0);
+    setLastScanUsedChart(withChart);
     const results: Opportunity[] = [];
-    // Use selected pairs, or fallback to all pairs if none selected
-    const pairs = selectedPairs.length > 0 ? selectedPairs : TRADING_RULES.TRADING_PAIRS;
     const total = pairs.length;
 
     for (let i = 0; i < pairs.length; i++) {
       const pair = pairs[i];
       try {
-        const symbol = pair.replace('/', ''); // Convert EUR/USD to EURUSD
-        const analysis = await gatedEngineAdapter.analyzeMarket(symbol, []);
+        const symbol = pair.replace('/', '');
+        const cachedVision = getChartVisionCache(symbol);
+        const analysis = await gatedEngineAdapter.analyzeMarket(symbol, [], undefined, {
+          mode: 'scan',
+          precomputedGptStructure: cachedVision?.structure,
+          generateChartFromOhlc: withChart && !cachedVision?.structure,
+        });
         
         const strength = analysis.overallScore * (analysis.confidence / 100);
         const executionPermitted = analysis.gateStatus?.executionPermitted ?? false;
@@ -200,12 +261,16 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
           strength,
           executionPermitted,
           executionBlockedBy: analysis.gateStatus?.executionBlockedBy ?? [],
+          marketReadabilityReason: analysis.gateStatus?.marketReadabilityReason,
+          marketReadable: analysis.gateStatus?.marketReadable,
+          gate1Inputs: analysis.gateStatus?.gate1Inputs,
+          dataHealth: analysis.dataHealth,
         });
         
         setScanProgress(Math.round(((i + 1) / total) * 100));
         
         // Increased delay to avoid rate limits (1 second between pairs)
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, withChart ? 1500 : 1000));
       } catch (error) {
         console.error(`Error analyzing ${pair}:`, error);
         setScanProgress(Math.round(((i + 1) / total) * 100));
@@ -215,6 +280,17 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
     // Sort by strength (score * confidence)
     results.sort((a, b) => b.strength - a.strength);
     setOpportunities(results);
+
+    setScanHealth({
+      pairCount: results.length,
+      ohlcSourceMt5: results.filter((r) => r.dataHealth?.ohlcSource === 'mt5').length,
+      ohlcSourceTwelveData: results.filter((r) => r.dataHealth?.ohlcSource === 'twelvedata').length,
+      technicalFallbackCount: results.filter((r) => r.dataHealth?.technicalUsedFallback).length,
+      ohlcStructureCount: results.filter((r) => r.dataHealth?.usedOhlcStructure).length,
+      chartVisionCount: results.filter((r) => r.dataHealth?.usedChartVision).length,
+      gate1ReadableCount: results.filter((r) => r.marketReadable).length,
+      withChart,
+    });
     saveScanResultsForAlerts(
       results.map((r) => ({
         symbol: r.symbol,
@@ -570,11 +646,11 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
             {autoScanEnabled ? '⏸️ Auto ON' : '▶️ Manual'}
           </button>
           <button
-            onClick={scanAllPairs}
+            onClick={() => void scanAllPairs(false)}
             disabled={isScanning}
             className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg font-medium hover:from-cyan-600 hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            {isScanning ? (
+            {isScanning && !lastScanUsedChart ? (
               <>
                 <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -583,10 +659,16 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
                 Scanning... {scanProgress}%
               </>
             ) : (
-              <>
-                <span>🔍 Scan Now</span>
-              </>
+              <span>🔍 Scan Now</span>
             )}
+          </button>
+          <button
+            onClick={() => void scanAllPairs(true)}
+            disabled={isScanning}
+            className="px-4 py-3 bg-[#141c2b] border border-purple-500/40 text-purple-300 rounded-lg font-medium hover:bg-purple-500/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            title="Uses AI vision API credits — one call per pair without Trade tab cache"
+          >
+            {isScanning && lastScanUsedChart ? `Chart scan… ${scanProgress}%` : '📈 Scan with chart'}
           </button>
         </div>
       </div>
@@ -825,14 +907,10 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
                         <span className="text-white font-medium">{opp.symbol}</span>
                         {' — '}
                         {opp.recommendation}, {opp.confidence}% conf
-                        {opp.executionBlockedBy.length > 0 ? (
-                          <span className="text-amber-400/90">
-                            {' '}
-                            · {opp.executionBlockedBy.slice(0, 2).join('; ')}
-                          </span>
-                        ) : !opp.executionPermitted ? (
-                          <span className="text-amber-400/90"> · Gate 4 blocked</span>
-                        ) : null}
+                        <span className="text-amber-400/90">
+                          {' '}
+                          · {formatPairBlockReason(opp)}
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -844,6 +922,44 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
               </ul>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Scan health panel */}
+      {scanHealth && opportunities.length > 0 && (
+        <div className="mb-6 p-4 rounded-lg bg-[#141c2b] border border-[#1e2738]">
+          <h4 className="text-sm font-medium text-white mb-2">Scan data health</h4>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-gray-400">
+            <div>
+              <span className="text-gray-500">OHLC source</span>
+              <p className="text-gray-200">
+                MT5 {scanHealth.ohlcSourceMt5} · TwelveData {scanHealth.ohlcSourceTwelveData}
+              </p>
+            </div>
+            <div>
+              <span className="text-gray-500">Gate 1 readable</span>
+              <p className="text-gray-200">
+                {scanHealth.gate1ReadableCount}/{scanHealth.pairCount} pairs
+              </p>
+            </div>
+            <div>
+              <span className="text-gray-500">OHLC structure</span>
+              <p className="text-gray-200">{scanHealth.ohlcStructureCount} pairs (no vision credits)</p>
+            </div>
+            <div>
+              <span className="text-gray-500">Technical fallback</span>
+              <p className={scanHealth.technicalFallbackCount > 0 ? 'text-amber-400' : 'text-emerald-400'}>
+                {scanHealth.technicalFallbackCount > 0
+                  ? `${scanHealth.technicalFallbackCount} pairs (missing OHLC)`
+                  : 'None — real indicator data'}
+              </p>
+            </div>
+          </div>
+          {scanHealth.withChart && (
+            <p className="text-xs text-purple-300 mt-2">
+              Chart vision used on {scanHealth.chartVisionCount} pair(s).
+            </p>
+          )}
         </div>
       )}
 
@@ -990,6 +1106,7 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Pair</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Signal</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Executable</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Gate 1</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Blocked because</th>
                   <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Score</th>
                   <th className="text-right py-3 px-4 text-sm font-medium text-gray-400">Confidence</th>
@@ -1044,21 +1161,24 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
                           {opp.executionPermitted ? 'Yes' : 'No'}
                         </span>
                       </td>
-                      <td className="py-3 px-4 max-w-[220px]">
-                        {!isValid && opp.executionBlockedBy.length > 0 ? (
-                          <span className="text-xs text-amber-400/90 line-clamp-2">
-                            {opp.executionBlockedBy.slice(0, 2).join('; ')}
-                          </span>
-                        ) : !isValid && opp.recommendation === 'HOLD' ? (
-                          <span className="text-xs text-gray-500">HOLD — no directional setup</span>
-                        ) : !isValid && opp.confidence < SCANNER_MIN_CONFIDENCE_GATE ? (
-                          <span className="text-xs text-gray-500">
-                            Confidence {opp.confidence}% &lt; {SCANNER_MIN_CONFIDENCE_GATE}%
-                          </span>
-                        ) : isValid ? (
-                          <span className="text-xs text-emerald-400/80">—</span>
+                      <td className="py-3 px-4 text-xs text-gray-400">
+                        {opp.gate1Inputs ? (
+                          <div className="space-y-0.5">
+                            <div>Trend {opp.gate1Inputs.trendStrength}%</div>
+                            <div>Pattern {opp.gate1Inputs.patternConfidence}%</div>
+                            <div>S/R {opp.gate1Inputs.hasSupportResistance ? 'yes' : 'no'}</div>
+                          </div>
                         ) : (
-                          <span className="text-xs text-gray-500">Gate 4 not passed</span>
+                          '—'
+                        )}
+                      </td>
+                      <td className="py-3 px-4 max-w-[260px]">
+                        {!isValid ? (
+                          <span className="text-xs text-amber-400/90 line-clamp-3" title={formatPairBlockReason(opp)}>
+                            {formatPairBlockReason(opp)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-emerald-400/80">—</span>
                         )}
                       </td>
                       <td className="py-3 px-4 text-right">
@@ -1130,7 +1250,7 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
           description='Click "Scan Now" to analyze your selected pairs. Executable signals need Gate 4 pass and confidence ≥50% (same rules as Trade tab).'
           action={{
             label: '🔍 Scan All Pairs',
-            onClick: scanAllPairs,
+            onClick: () => void scanAllPairs(false),
           }}
         />
       ) : null}

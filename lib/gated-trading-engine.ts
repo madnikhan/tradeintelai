@@ -137,6 +137,25 @@ export interface GatedMarketAnalysis {
   regimeAnalysis?: RegimeAnalysis;
   tradingHours?: TradingHoursAnalysis;
   newsImpact?: NewsImpact;
+
+  /** Per-run data pipeline health (scanner diagnostics) */
+  dataHealth?: {
+    ohlcBars: number;
+    ohlcSource: 'mt5' | 'twelvedata';
+    technicalUsedFallback: boolean;
+    analysisMode: 'scan' | 'trade';
+    usedOhlcStructure: boolean;
+    usedChartVision: boolean;
+  };
+}
+
+export type GatedAnalysisMode = 'scan' | 'trade';
+
+export interface GatedAnalyzeOptions {
+  precomputedGptStructure?: GPTStructureAnalysis;
+  mode?: GatedAnalysisMode;
+  /** Browser-only: render OHLC chart and run vision API per pair */
+  generateChartFromOhlc?: boolean;
 }
 
 // ============================================================================
@@ -146,6 +165,7 @@ export interface GatedMarketAnalysis {
 export class GatedTradingEngine {
   private historicalData: PriceData[] = []
   private debugLog: string[] = [] // Debug logging for all decisions;
+  private lastOhlcSource: 'mt5' | 'twelvedata' = 'mt5';
   
   /**
    * Main analysis function - GATED FLOW
@@ -154,18 +174,23 @@ export class GatedTradingEngine {
     symbol: string,
     openTrades: any[] = [],
     chartImageBase64?: string,
-    precomputedGptStructure?: GPTStructureAnalysis
+    options?: GatedAnalyzeOptions
   ): Promise<GatedMarketAnalysis> {
+    const analysisMode: GatedAnalysisMode = options?.mode ?? 'trade';
+    let usedOhlcStructure = false;
+    let usedChartVision = false;
+
     // 🔒 DEBUG: Log chart image availability at entry
-    console.log(`[GATED ENGINE] analyzeMarket called for ${symbol}, chartImageBase64: ${chartImageBase64 ? `YES (${chartImageBase64.length} chars)` : 'NO'}`);
+    console.log(`[GATED ENGINE] analyzeMarket called for ${symbol}, chartImageBase64: ${chartImageBase64 ? `YES (${chartImageBase64.length} chars)` : 'NO'}, mode: ${analysisMode}`);
     this.debugLog = []; // Reset debug log for this analysis
-    this.debugLog.push(`[GATED ENGINE] analyzeMarket called for ${symbol}, chartImageBase64: ${chartImageBase64 ? `YES (${chartImageBase64.length} chars)` : 'NO'}`);
+    this.debugLog.push(`[GATED ENGINE] analyzeMarket called for ${symbol}, chartImageBase64: ${chartImageBase64 ? `YES (${chartImageBase64.length} chars)` : 'NO'}, mode: ${analysisMode}`);
     
     // Load historical data
     await this.loadHistoricalData(symbol);
     
     // Get all component analyses
     const technicalScore = await this.getTechnicalScore(symbol);
+    const technicalUsedFallback = this.historicalData.length < 20;
     const fundamentalScore = await this.getFundamentalScore(symbol);
     const sentimentScore = await this.getSentimentScore(symbol);
     const cotAnalysis = await this.getCOTAnalysis(symbol);
@@ -175,16 +200,60 @@ export class GatedTradingEngine {
     
     // Get GPT structure analysis (reformed role)
     let gptStructure: GPTStructureAnalysis | undefined;
-    if (precomputedGptStructure) {
-      gptStructure = precomputedGptStructure;
+    let effectiveChartImage = chartImageBase64;
+
+    if (options?.generateChartFromOhlc && !effectiveChartImage && typeof window !== 'undefined') {
+      try {
+        const { renderOhlcChartBase64 } = await import('./ohlc-chart-capture');
+        effectiveChartImage = renderOhlcChartBase64(this.historicalData, symbol) || undefined;
+        if (effectiveChartImage) {
+          this.debugLog.push(`[GATED ENGINE] Generated OHLC chart image for vision (${effectiveChartImage.length} chars)`);
+        }
+      } catch (e) {
+        console.warn('[GATED ENGINE] OHLC chart render failed:', e);
+      }
+    }
+
+    if (options?.precomputedGptStructure) {
+      gptStructure = options.precomputedGptStructure;
       this.debugLog.push(
         `[GATED ENGINE] Using precomputed chart vision structure (confidence: ${gptStructure.confidence}%, patterns: ${gptStructure.patterns?.length || 0})`
       );
     } else {
-      this.debugLog.push(`[GATED ENGINE] Calling getGPTStructureAnalysis with chartImageBase64: ${chartImageBase64 ? `YES (${chartImageBase64.length} chars)` : 'NO'}`);
-      gptStructure = await this.getGPTStructureAnalysis(symbol, chartImageBase64);
+      this.debugLog.push(`[GATED ENGINE] Calling getGPTStructureAnalysis with chartImageBase64: ${effectiveChartImage ? `YES (${effectiveChartImage.length} chars)` : 'NO'}`);
+      gptStructure = await this.getGPTStructureAnalysis(symbol, effectiveChartImage);
+      if (gptStructure && effectiveChartImage) {
+        usedChartVision = true;
+      }
       this.debugLog.push(`[GATED ENGINE] getGPTStructureAnalysis returned: ${gptStructure ? `YES (confidence: ${gptStructure.confidence}%, patterns: ${gptStructure.patterns?.length || 0}, S/R: support=[${gptStructure.supportResistance?.support?.join(', ') || 'none'}], resistance=[${gptStructure.supportResistance?.resistance?.join(', ') || 'none'}])` : 'NO'}`);
     }
+
+    const priceActionSR = this.computeSupportResistanceFromOHLC();
+
+    if (!gptStructure && analysisMode === 'scan') {
+      try {
+        const { analyzeOhlcStructure } = await import('./ohlc-structure-analysis');
+        const ohlcStructure = analyzeOhlcStructure(this.historicalData, priceActionSR);
+        if (ohlcStructure) {
+          gptStructure = ohlcStructure;
+          usedOhlcStructure = true;
+          this.debugLog.push(
+            `[GATED ENGINE] Using OHLC rule-based structure (confidence: ${ohlcStructure.confidence}%, trend: ${ohlcStructure.trendStrength}%)`
+          );
+        }
+      } catch (e) {
+        console.warn('[GATED ENGINE] OHLC structure analysis failed:', e);
+      }
+    }
+
+    const dataHealth: GatedMarketAnalysis['dataHealth'] = {
+      ohlcBars: this.historicalData.length,
+      ohlcSource: this.lastOhlcSource,
+      technicalUsedFallback,
+      analysisMode,
+      usedOhlcStructure,
+      usedChartVision,
+    };
     
     // ========================================================================
     // LAYER 1: MARKET READABILITY GATE (MANDATORY)
@@ -194,11 +263,13 @@ export class GatedTradingEngine {
     this.debugLog.push(`[GATE 1] Starting Market Readability Assessment`);
     this.debugLog.push(`[GATE 1] Regime Trend Strength: ${regimeAnalysis.trendStrength}%`);
     
-    const priceActionSR = this.computeSupportResistanceFromOHLC();
+    const { getOhlcAdx } = await import('./ohlc-structure-analysis');
+    const ohlcAdx = getOhlcAdx(this.historicalData);
     const marketReadability = this.assessMarketReadability(
       regimeAnalysis,
       gptStructure,
-      priceActionSR
+      priceActionSR,
+      { mode: analysisMode, adx: ohlcAdx }
     );
     
     this.debugLog.push(`[GATE 1] Result: ${marketReadability.isReadable ? 'READABLE' : 'UNREADABLE'} (confidence: ${marketReadability.confidence}%)`);
@@ -282,7 +353,8 @@ export class GatedTradingEngine {
         gptStructure,
         directionalBias,
         executionPermission.reason,
-        executionPermission
+        executionPermission,
+        dataHealth
       );
     }
     
@@ -390,6 +462,7 @@ export class GatedTradingEngine {
       regimeAnalysis,
       tradingHours,
       newsImpact,
+      dataHealth,
     };
   }
   
@@ -451,8 +524,21 @@ export class GatedTradingEngine {
   private assessMarketReadability(
     regimeAnalysis: RegimeAnalysis,
     gptStructure?: GPTStructureAnalysis,
-    priceActionSR?: { support: number[]; resistance: number[] }
+    priceActionSR?: { support: number[]; resistance: number[] },
+    gateOptions?: { mode?: GatedAnalysisMode; adx?: number }
   ): MarketReadability {
+    const isScanMode = gateOptions?.mode === 'scan';
+    const adx = gateOptions?.adx ?? 0;
+    const trendThreshold =
+      isScanMode &&
+      adx > 20 &&
+      priceActionSR &&
+      (priceActionSR.support.length > 0 || priceActionSR.resistance.length > 0)
+        ? 45
+        : 60;
+    const patternThreshold =
+      isScanMode && gptStructure?.reasoning?.startsWith('OHLC:') ? 65 : 70;
+
     // 🔒 STRICT INVARIANT: Gate-1 must NEVER compute, normalize, clamp, or infer trend strength from:
     // - technicalScore
     // - indicators (RSI, MACD, EMA, etc.)
@@ -477,7 +563,7 @@ export class GatedTradingEngine {
     let gptTrendStrength = 0;
     if (gptStructure) {
       // 🔒 FIX: Use GPT's trendStrength field if available (passed through from ChartAnalysis)
-      if (gptStructure.trendStrength !== undefined && gptStructure.trendStrength >= 60) {
+      if (gptStructure.trendStrength !== undefined && gptStructure.trendStrength >= (isScanMode ? 45 : 60)) {
         gptTrendStrength = gptStructure.trendStrength;
         this.debugLog.push(`[GATE 1] GPT trend strength available: ${gptTrendStrength}%`);
       } else if (gptStructure.marketStructure === 'TREND_CONTINUATION' && gptStructure.confidence >= 70) {
@@ -499,7 +585,7 @@ export class GatedTradingEngine {
     
     // 🔒 CRITICAL FIX: Use GPT trend strength if regime trend is weak (< 60%) but GPT shows strong structure
     // This ensures GPT's 80% trend strength is recognized even when regime shows 12%
-    if (regimeAnalysis.trendStrength < 60 && gptTrendStrength >= 60 && gptStructure) {
+    if (regimeAnalysis.trendStrength < 60 && gptTrendStrength >= (isScanMode ? 45 : 60) && gptStructure) {
       // GPT shows strong trend (≥60%) - use it instead of weak regime trend
       // Don't require pattern confidence ≥70% - if GPT shows strong trend, use it
       this.debugLog.push(`[GATE 1] Using GPT trend strength (${gptTrendStrength}%) instead of regime trend strength (${regimeAnalysis.trendStrength}%) because GPT shows strong structure`);
@@ -523,10 +609,10 @@ export class GatedTradingEngine {
       trendStrengthPercent = regimeAnalysis.trendStrength;
     }
     
-    // 1. Structure-based trend strength ≥ 60%
-    const hasStrongTrend = trendStrengthPercent >= 60;
+    // 1. Structure-based trend strength (scan mode allows lower threshold with ADX + S/R)
+    const hasStrongTrend = trendStrengthPercent >= trendThreshold;
     const hasStrongPattern = gptStructure && 
-      maxPatternConfidence >= 70 && 
+      maxPatternConfidence >= patternThreshold && 
       gptStructure.marketStructure !== 'INVALID';
     
     // 3. Clear support and resistance levels identified (GPT and/or price-action swings)
@@ -2494,7 +2580,8 @@ export class GatedTradingEngine {
     gptStructure?: GPTStructureAnalysis,
     directionalBias?: DirectionalBias,
     holdReason?: string,
-    executionPermission?: ExecutionPermission
+    executionPermission?: ExecutionPermission,
+    dataHealth?: GatedMarketAnalysis['dataHealth']
   ): GatedMarketAnalysis {
     const directionalBiasFinal = directionalBias || {
       direction: 'NEUTRAL' as const,
@@ -2560,6 +2647,7 @@ export class GatedTradingEngine {
       regimeAnalysis,
       tradingHours,
       newsImpact,
+      dataHealth,
     };
   }
   
@@ -2867,6 +2955,9 @@ export class GatedTradingEngine {
     
     if (data.length === 0) {
       data = await TwelveDataProvider.getHistoricalData(symbol, '1h', 100);
+      this.lastOhlcSource = 'twelvedata';
+    } else {
+      this.lastOhlcSource = 'mt5';
     }
     
     if (data.length > 0) {
@@ -2877,9 +2968,11 @@ export class GatedTradingEngine {
   }
   
   private async getTechnicalScore(symbol: string): Promise<number> {
-    // Use existing technical analysis
     const engine = await import('./ai-trading-engine');
     const tempEngine = new engine.AITradingEngine();
+    if (this.historicalData.length >= 20) {
+      tempEngine.setHistoricalData(this.historicalData);
+    }
     return await tempEngine['technicalAnalysis'](symbol);
   }
   

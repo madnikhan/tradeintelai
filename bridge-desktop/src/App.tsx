@@ -208,6 +208,10 @@ export default function App() {
 
   const handleCopyLink = async () => {
     if (!tunnelUrl) return;
+    if (tunnelState !== 'running') {
+      setMessage('Tunnel is not running — click Connect dashboard to start a fresh tunnel and link.');
+      return;
+    }
     const base = dashboardBase.trim().replace(/\/$/, '');
     const link = `${base}/dashboard?bridge_url=${encodeURIComponent(tunnelUrl.trim())}`;
     try {
@@ -442,13 +446,18 @@ export default function App() {
         >
           {busy ? 'Connecting…' : 'Connect dashboard'}
         </button>
-        {tunnelUrl ? (
+        {tunnelState === 'running' && tunnelUrl ? (
           <div className="tunnel-url-row">
             <code className="tunnel-url">{tunnelUrl}</code>
             <button type="button" className="secondary small" onClick={handleCopyLink}>
               Copy link
             </button>
           </div>
+        ) : tunnelUrl && tunnelState !== 'running' ? (
+          <p className="path-warning" style={{ marginTop: '0.75rem' }}>
+            Previous tunnel URL is no longer active. Click <strong>Connect dashboard</strong> again —
+            do not reuse an old link.
+          </p>
         ) : null}
         <p className="muted small">
           Tunnel: {TUNNEL_LABEL[tunnelState]}

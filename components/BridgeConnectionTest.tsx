@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { getBridgeBaseUrl, hasConfiguredBridgeUrl } from '@/config/bridge-config';
 import { fetchBridgeStatusSnapshot, type BridgeStatusSnapshot } from '@/lib/bridge-status';
 
 interface CheckRow {
@@ -84,6 +85,13 @@ export function BridgeConnectionTest() {
           {running ? 'Testing…' : 'Test connection'}
         </button>
       </div>
+
+      <p className="text-xs text-gray-500">
+        Dashboard bridge URL:{' '}
+        <code className="text-gray-400 break-all">
+          {hasConfiguredBridgeUrl() ? getBridgeBaseUrl() : 'not set (using localhost fallback)'}
+        </code>
+      </p>
 
       {checks && snapshot && (
         <div className="space-y-2">

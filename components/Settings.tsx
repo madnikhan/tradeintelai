@@ -273,9 +273,38 @@ export function Settings() {
                 <p className="text-xs text-rose-400 mt-1">{bridgeUrlError}</p>
               ) : (
                 <p className="text-xs text-gray-500 mt-1">
-                  Your Cloudflare or ngrok tunnel — not the Vercel dashboard URL. Saved to your account on Save.
+                  Paste from TradeIntel Bridge after <strong className="text-gray-400">Connect dashboard</strong> (tunnel must show Connected). Then Save Settings and Test connection.
                 </p>
               )}
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const text = await navigator.clipboard.readText();
+                    const match = text.match(
+                      /https:\/\/[a-zA-Z0-9-]+\.(trycloudflare\.com|cfargotunnel\.com|ngrok-free\.app|ngrok\.io)/
+                    );
+                    if (match) {
+                      setBridgeUrl(match[0]);
+                      setBridgeUrlError(null);
+                    } else if (text.includes('bridge_url=')) {
+                      const u = new URL(text.trim());
+                      const param = u.searchParams.get('bridge_url');
+                      if (param) {
+                        setBridgeUrl(param);
+                        setBridgeUrlError(null);
+                      }
+                    } else {
+                      setBridgeUrlError('Clipboard has no tunnel URL — use Connect dashboard in the bridge app first.');
+                    }
+                  } catch {
+                    setBridgeUrlError('Could not read clipboard — paste tunnel URL manually.');
+                  }
+                }}
+                className="mt-2 text-xs text-cyan-400 hover:underline"
+              >
+                Paste tunnel URL from clipboard
+              </button>
             </div>
             <BridgePairingPanel />
             <BridgeConnectionTest />

@@ -49,6 +49,58 @@ function clearInvalidBridgeUrl(): void {
   }
 }
 
+function getBridgeBaseUrlFromSources(): string | null {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const urlParam = params.get('bridge_url');
+    if (urlParam) {
+      const normalized = normalizeBridgeBaseUrl(urlParam);
+      if (normalized) {
+        persistBridgeUrl(normalized);
+        return normalized;
+      }
+    }
+
+    const storageUrl = localStorage.getItem('bridge_url');
+    if (storageUrl?.trim()) {
+      const normalized = normalizeBridgeBaseUrl(storageUrl);
+      if (normalized) {
+        if (
+          window.location.protocol === 'https:' &&
+          /localhost|127\.0\.0\.1/i.test(normalized)
+        ) {
+          console.warn('[Bridge Config] Clearing localhost bridge_url on HTTPS dashboard');
+          clearInvalidBridgeUrl();
+        } else {
+          return normalized;
+        }
+      } else {
+        clearInvalidBridgeUrl();
+      }
+    }
+  }
+
+  const envUrl = process.env.NEXT_PUBLIC_BRIDGE_URL?.trim();
+  if (envUrl) {
+    const normalized = normalizeBridgeBaseUrl(envUrl);
+    if (normalized) return normalized;
+  }
+
+  return null;
+}
+
+/** True when a tunnel/local bridge URL is configured (not the dev localhost fallback). */
+export function hasConfiguredBridgeUrl(): boolean {
+  return getBridgeBaseUrlFromSources() != null;
+}
+
+/** HTTPS Vercel dashboard cannot call http://localhost:8080 in the browser. */
+export function isUnreachableLocalBridgeOnRemoteDashboard(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (window.location.protocol !== 'https:') return false;
+  return !hasConfiguredBridgeUrl();
+}
+
 /**
  * Get bridge URL from multiple sources (priority order).
  * Resolved on every read (client) so localStorage / URL changes apply without a full reload.
@@ -56,44 +108,18 @@ function clearInvalidBridgeUrl(): void {
  * 1. URL parameter (?bridge_url=...)
  * 2. localStorage (bridge_url)
  * 3. Environment variable (NEXT_PUBLIC_BRIDGE_URL)
- * 4. Default (http://localhost:8080)
+ * 4. Default (http://localhost:8080) — local dev only
  */
 export function getBridgeBaseUrl(): string {
-  // Priority 1: URL parameter (for Vercel + tunnel / ngrok / Cloudflare)
-  if (typeof window !== 'undefined') {
-    const params = new URLSearchParams(window.location.search);
-    const urlParam = params.get('bridge_url');
-    if (urlParam) {
-      const normalized = normalizeBridgeBaseUrl(urlParam);
-      if (normalized) {
-        console.log('[Bridge Config] Using bridge URL from URL parameter:', normalized);
-        persistBridgeUrl(normalized);
-        return normalized;
-      }
-      console.warn('[Bridge Config] Ignoring invalid bridge_url query param:', urlParam);
+  const fromSources = getBridgeBaseUrlFromSources();
+  if (fromSources) {
+    if (typeof window !== 'undefined') {
+      console.log('[Bridge Config] Using configured bridge URL:', fromSources);
     }
-
-    // Priority 2: localStorage (persists across visits; set via ?bridge_url= or DevTools)
-    const storageUrl = localStorage.getItem('bridge_url');
-    if (storageUrl?.trim()) {
-      const normalized = normalizeBridgeBaseUrl(storageUrl);
-      if (normalized) {
-        console.log('[Bridge Config] Using bridge URL from localStorage:', normalized);
-        return normalized;
-      }
-      console.warn('[Bridge Config] Clearing invalid bridge_url from localStorage:', storageUrl);
-      clearInvalidBridgeUrl();
-    }
+    return fromSources;
   }
 
-  // Priority 3: Environment variable (baked at build time on client)
-  const envUrl = process.env.NEXT_PUBLIC_BRIDGE_URL?.trim();
-  if (envUrl) {
-    const normalized = normalizeBridgeBaseUrl(envUrl);
-    if (normalized) return normalized;
-  }
-
-  // Priority 4: Default (same machine only)
+  // Priority 4: Default (same machine / local dev only)
   return 'http://localhost:8080';
 }
 

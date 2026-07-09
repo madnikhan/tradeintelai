@@ -3,7 +3,7 @@
  * active MT5 account, and live balance into one source of truth.
  */
 
-import { getBridgeUrl } from '@/config/bridge-config';
+import { getBridgeUrl, hasConfiguredBridgeUrl, isUnreachableLocalBridgeOnRemoteDashboard } from '@/config/bridge-config';
 import { syncAccountFromBridge } from '@/lib/bridge-account-sync';
 import { getActiveAccountLogin } from '@/lib/trade-permissions';
 import type { BridgePresenceState } from '@/lib/bridge-presence';
@@ -78,7 +78,7 @@ const STATE_META: Record<
     label: 'Bridge offline',
     headerLabel: 'Offline',
     fixHint:
-      'Start TradeIntel Bridge and Cloudflare tunnel on your home PC, then open Setup and save your tunnel URL (or use Connect dashboard from the bridge app).',
+      'No tunnel URL configured. On your Mac: open TradeIntel Bridge → Connect dashboard (copies tunnel URL). Then Setup → save tunnel URL → Test connection → pair with npm run bridge:pair.',
     canExecute: false,
   },
   unknown: {
@@ -148,7 +148,12 @@ export function deriveBridgeStatus(inputs: BridgeStatusInputs): BridgeStatusSnap
 
   let state: Exclude<BridgeConnectivityState, 'checking'>;
 
-  if (!http.reachable) {
+  if (
+    typeof window !== 'undefined' &&
+    (!hasConfiguredBridgeUrl() || isUnreachableLocalBridgeOnRemoteDashboard())
+  ) {
+    state = 'tunnel_down';
+  } else if (!http.reachable) {
     state = 'tunnel_down';
   } else if (presenceState === 'unknown') {
     state = 'unknown';
@@ -184,6 +189,13 @@ export function deriveBridgeStatus(inputs: BridgeStatusInputs): BridgeStatusSnap
 }
 
 export async function fetchHttpBridgeHealth(): Promise<HttpBridgeHealth> {
+  if (
+    typeof window !== 'undefined' &&
+    (!hasConfiguredBridgeUrl() || isUnreachableLocalBridgeOnRemoteDashboard())
+  ) {
+    return { reachable: false, mt5Connected: false };
+  }
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 12000);

@@ -45,7 +45,7 @@ function convertToLegacyFormat(gated: GatedMarketAnalysis): ExtendedMarketAnalys
     suggestedStopLoss: gated.suggestedStopLoss ?? 0,
     suggestedTakeProfit: gated.suggestedTakeProfit ?? 0,
     suggestedPositionSize: gated.suggestedPositionSize ?? 0,
-    reasoning: gated.recommendationReason,
+    reasoning: [gated.recommendationReason],
     detailedReasoning: gated.detailedReasoning,
     gateStatus: {
       marketReadable: gated.marketReadability.isReadable,

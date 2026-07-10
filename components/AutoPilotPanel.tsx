@@ -6,7 +6,7 @@ import type { AutoPilotConfig, AutoPilotDaemonStatus } from '@/lib/auto-pilot/ty
 import { DEFAULT_AUTO_PILOT_CONFIG } from '@/lib/auto-pilot/types';
 import { AUTO_PILOT_PRESETS } from '@/lib/auto-pilot/presets';
 import { DemoSuccessGoals } from '@/components/DemoSuccessGoals';
-import type { Trade } from '@/types/trading';
+import type { Trade, Account } from '@/types/trading';
 import { TRADING_RULES } from '@/config/trading-rules';
 
 interface AutoPilotPanelProps {

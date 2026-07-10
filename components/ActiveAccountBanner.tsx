@@ -1,5 +1,7 @@
 'use client';
 
+import { useBridgeStatus } from '@/hooks/useBridgeStatus';
+
 /**
  * @deprecated Use BridgeStatusBar — kept for execute tooltip export compatibility.
  */

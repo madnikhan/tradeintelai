@@ -13,6 +13,7 @@ import { TradeVerdictBanner } from '@/components/TradeVerdictBanner';
 import { DataProvenancePanel } from '@/components/DataProvenancePanel';
 import { AccordionItem } from '@/components/ui/Accordion';
 import { useBridgeStatus } from '@/hooks/useBridgeStatus';
+import type { Account } from '@/types/trading';
 
 interface TradeTabViewProps {
   account: Account;

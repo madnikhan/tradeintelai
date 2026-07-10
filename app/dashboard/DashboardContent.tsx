@@ -53,6 +53,10 @@ const PerformanceTracker = dynamic(() => import('@/components/PerformanceTracker
   loading: tabPanelFallback,
   ssr: false,
 })
+const AccuracyDashboard = dynamic(
+  () => import('@/components/AccuracyDashboard').then((m) => ({ default: m.AccuracyDashboard })),
+  { loading: tabPanelFallback, ssr: false }
+)
 const AutoPilotPanel = dynamic(
   () => import('@/components/AutoPilotPanel').then((m) => ({ default: m.AutoPilotPanel })),
   { loading: tabPanelFallback, ssr: false }

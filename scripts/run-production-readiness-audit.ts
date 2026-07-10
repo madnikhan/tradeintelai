@@ -178,7 +178,7 @@ function evaluateDemoGoals(): void {
   }
 }
 
-function deriveVerdict(): { tier: string; liveManual: string; liveAuto: string; demoTest: string } {
+function deriveVerdict(): { tier: string; liveManual: string; liveAuto: string; copilotOnly: string; demoTest: string } {
   const fails = results.filter((r) => r.status === 'FAIL');
   const demoReady = results.find((r) => r.section === 'Demo → Live readiness')?.status === 'PASS';
 
@@ -190,7 +190,8 @@ function deriveVerdict(): { tier: string; liveManual: string; liveAuto: string; 
     tier: infraOk ? 'Infrastructure APPROVED' : 'Infrastructure NEEDS FIX',
     demoTest: infraOk ? 'CONDITIONALLY APPROVED — complete MANUAL items in report' : 'NOT APPROVED — fix FAIL items first',
     liveManual: demoReady ? 'APPROVED for smallest manual live test (0.01 lot)' : 'NOT APPROVED — complete 2–4 week demo track first',
-    liveAuto: 'NOT APPROVED — semi-manual system; requires human Execute + open browser for Position Watch',
+    liveAuto: 'CONDITIONALLY APPROVED — Auto Pilot daemon on Windows VPS; demo dry-run required; see docs/AUTO_PILOT.md',
+    copilotOnly: 'APPROVED — manual Copilot (Trade/Scan) with Approve & Execute',
   };
 }
 
@@ -213,7 +214,8 @@ function writeReport(verdict: ReturnType<typeof deriveVerdict>): string {
   lines.push(`| Infrastructure | ${verdict.tier} |`);
   lines.push(`| Demo manual testing | ${verdict.demoTest} |`);
   lines.push(`| Live manual (0.01 lot) | ${verdict.liveManual} |`);
-  lines.push(`| Live autotrading | ${verdict.liveAuto} |`);
+  lines.push(`| Live Auto Pilot (daemon) | ${verdict.liveAuto} |`);
+  lines.push(`| Copilot manual mode | ${verdict.copilotOnly} |`);
   lines.push('');
   lines.push('## Section results');
   lines.push('');
@@ -255,7 +257,8 @@ function writeReport(verdict: ReturnType<typeof deriveVerdict>): string {
     lines.push('**Live manual test: APPROVED** — proceed with 0.01 lot, one pair, Position Watch open.');
   }
   lines.push('');
-  lines.push('**Live autotrading: NOT APPROVED** — system requires dashboard Execute; do not enable Scalping on live until 2+ stable demo weeks.');
+  lines.push('**Live Auto Pilot:** Windows VPS + dry-run demo track first; see docs/AUTO_PILOT.md and docs/VPS_SETUP.md.');
+  lines.push('**Copilot manual:** Approve & Execute; Position Watch while dashboard open.');
 
   const md = lines.join('\n');
   fs.writeFileSync(mdPath, md);

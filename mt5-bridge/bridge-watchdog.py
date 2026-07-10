@@ -128,6 +128,7 @@ class BridgeWatchdog:
             'takeProfit': float(payload.get('takeProfit') or payload.get('tp') or 0),
             'analysisId': payload.get('analysisId'),
             'profile': payload.get('profile', 'default'),
+            'source': payload.get('source', 'auto_pilot'),
             'takeProfitDollars': payload.get('takeProfitDollars'),
             'openedAt': payload.get('openedAt') or datetime.now(timezone.utc).isoformat(),
             'status': 'watching',

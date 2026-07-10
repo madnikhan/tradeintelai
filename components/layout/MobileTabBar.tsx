@@ -1,6 +1,6 @@
 'use client';
 
-export type PrimaryTabId = 'trade' | 'scan' | 'performance' | 'settings';
+export type PrimaryTabId = 'trade' | 'scan' | 'autopilot' | 'performance' | 'settings';
 
 export interface PrimaryTab {
   id: PrimaryTabId;
@@ -12,6 +12,7 @@ export interface PrimaryTab {
 export const PRIMARY_TABS: PrimaryTab[] = [
   { id: 'trade', label: 'Trade', shortLabel: 'Trade', icon: '💹' },
   { id: 'scan', label: 'Scan', shortLabel: 'Scan', icon: '🔍' },
+  { id: 'autopilot', label: 'Auto Pilot', shortLabel: 'Auto', icon: '🤖' },
   { id: 'performance', label: 'Performance', shortLabel: 'Perf', icon: '📈' },
   { id: 'settings', label: 'Setup', shortLabel: 'Setup', icon: '⚙️' },
 ];

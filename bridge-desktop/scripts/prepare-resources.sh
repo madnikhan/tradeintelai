@@ -12,8 +12,10 @@ BUILD_DESKTOP="${BUILD_DESKTOP:-0}"
 mkdir -p "$BRIDGE" "$RES/python" "$RES/cloudflared" "$ICONS"
 
 MT5="$REPO/mt5-bridge"
-for f in wine-mt5-connector.py mt5_paths.py MT5FileBridgeEA.mq5 configure-paths.sh start-wine-bridge.sh CLIENT_PLATFORMS.md; do
-  cp "$MT5/$f" "$BRIDGE/"
+for f in wine-mt5-connector.py mt5_paths.py bridge-watchdog.py MT5FileBridgeEA.mq5 TradeIntelAutoEA.mq5 configure-paths.sh start-wine-bridge.sh CLIENT_PLATFORMS.md auto-trader-daemon.py auto-trader-executor.py auto-trader-worker.ts; do
+  if [ -f "$MT5/$f" ]; then
+    cp "$MT5/$f" "$BRIDGE/"
+  fi
 done
 mkdir -p "$BRIDGE/colleague" "$BRIDGE/windows"
 cp "$MT5/colleague/COLLEAGUE_SETUP.md" "$BRIDGE/colleague/"

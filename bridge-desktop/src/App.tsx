@@ -81,6 +81,23 @@ interface PickMt5FilesDirResult {
   converted_from_experts: boolean;
 }
 
+type AutoPilotState = 'stopped' | 'starting' | 'running' | 'error';
+
+interface AutoPilotStatus {
+  state: AutoPilotState;
+  message: string;
+  pid: number | null;
+  log_path: string | null;
+  config_path: string | null;
+}
+
+const AUTO_PILOT_LABEL: Record<AutoPilotState, string> = {
+  stopped: 'Stopped',
+  starting: 'Starting…',
+  running: 'Running',
+  error: 'Error',
+};
+
 const STATE_LABEL: Record<BridgeState, string> = {
   stopped: 'Stopped',
   starting: 'Starting…',
@@ -128,6 +145,8 @@ export default function App() {
   const [mt5Candidates, setMt5Candidates] = useState<Mt5FilesCandidatesResult | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [pathNote, setPathNote] = useState<string | null>(null);
+  const [autoPilotStatus, setAutoPilotStatus] = useState<AutoPilotStatus | null>(null);
+  const [autoPilotLog, setAutoPilotLog] = useState('');
 
   const refresh = useCallback(async () => {
     if (!inDesktop) return;
@@ -143,6 +162,14 @@ export default function App() {
       setTunnelUrl(t.tunnel_url ?? c.tunnel_url ?? '');
       setDashboardBase(c.dashboard_base_url ?? 'https://tradeintelai.vercel.app');
       setMt5Path(c.mt5_files_dir ?? s.mt5_files_dir ?? '');
+      try {
+        const ap = await invoke<AutoPilotStatus>('get_auto_pilot_status');
+        setAutoPilotStatus(ap);
+        const log = await invoke<string>('get_auto_pilot_log');
+        setAutoPilotLog(log);
+      } catch {
+        /* optional */
+      }
     } catch (e) {
       setMessage(String(e));
     }
@@ -239,12 +266,48 @@ export default function App() {
   const handleStop = async () => {
     if (!inDesktop) return;
     try {
+      await invoke('stop_auto_pilot');
       await invoke('stop_tunnel');
       await invoke('stop_bridge');
-      setMessage('Bridge and tunnel stopped');
+      setMessage('Bridge, tunnel, and Auto Pilot stopped');
       await refresh();
     } catch (e) {
       setMessage(String(e));
+    }
+  };
+
+  const handleStartAutoPilot = async () => {
+    if (!inDesktop) return;
+    setBusy(true);
+    setMessage('Starting bridge (if needed) and Auto Pilot daemon…');
+    try {
+      const s = await invoke<BridgeStatus>('get_bridge_status');
+      if (s.state === 'stopped' || s.state === 'error') {
+        await invoke('start_bridge');
+      }
+      await invoke('start_auto_pilot');
+      setMessage(
+        'Auto Pilot started. Configure in dashboard → Auto Pilot tab. Windows VPS recommended for 24/7.'
+      );
+      await refresh();
+    } catch (e) {
+      setMessage(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleStopAutoPilot = async () => {
+    if (!inDesktop) return;
+    setBusy(true);
+    try {
+      await invoke('stop_auto_pilot');
+      setMessage('Auto Pilot stopped.');
+      await refresh();
+    } catch (e) {
+      setMessage(String(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -525,6 +588,34 @@ export default function App() {
               <li>Save settings → Start bridge → enable Algo Trading + EA on chart</li>
             </ol>
           </div>
+        ) : null}
+      </section>
+
+      <section className="panel autopilot-panel">
+        <h2>Auto Pilot (full-auto MT5)</h2>
+        <p className="path-warning">
+          <strong>Windows VPS recommended.</strong> Auto Pilot runs 24/7 without the dashboard open.
+          Mac + Wine: use Copilot (manual) on the web dashboard; socket EA fallback is experimental.
+        </p>
+        <p className="muted small">
+          Status: {autoPilotStatus ? AUTO_PILOT_LABEL[autoPilotStatus.state] : '—'}
+          {autoPilotStatus?.message ? ` — ${autoPilotStatus.message}` : ''}
+        </p>
+        <div className="actions">
+          <button type="button" onClick={handleStartAutoPilot} disabled={busy || !inDesktop}>
+            Start Auto Pilot
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={handleStopAutoPilot}
+            disabled={busy || !inDesktop}
+          >
+            Stop Auto Pilot
+          </button>
+        </div>
+        {autoPilotLog ? (
+          <pre className="log-tail muted small">{autoPilotLog.slice(-2000)}</pre>
         ) : null}
       </section>
 

@@ -1,9 +1,11 @@
+mod auto_pilot_manager;
 mod bridge_manager;
 mod config;
 mod dependency_manager;
 mod paths;
 mod tunnel_manager;
 
+use auto_pilot_manager::{AutoPilotManager, AutoPilotStatus};
 use bridge_manager::{health_check_url_quick, BridgeManager, BridgeState, CopyEaResult};
 use paths::Mt5FilesCandidatesResult;
 use config::AppConfig;
@@ -25,6 +27,7 @@ const DEFAULT_DASHBOARD_BASE: &str = "https://tradeintelai.vercel.app";
 struct AppState {
     manager: Arc<BridgeManager>,
     tunnel: Arc<TunnelManager>,
+    auto_pilot: Arc<AutoPilotManager>,
     resource_dir: PathBuf,
 }
 
@@ -33,6 +36,28 @@ struct ConnectDashboardResult {
     tunnel_url: String,
     dashboard_url: String,
     clipboard_copied: bool,
+}
+
+#[tauri::command]
+fn get_auto_pilot_status(state: State<AppState>) -> AutoPilotStatus {
+    state.auto_pilot.poll_child();
+    state.auto_pilot.get_status()
+}
+
+#[tauri::command]
+fn start_auto_pilot(state: State<AppState>) -> Result<(), String> {
+    let config = state.manager.get_config();
+    state.auto_pilot.start(&config)
+}
+
+#[tauri::command]
+fn stop_auto_pilot(state: State<AppState>) {
+    state.auto_pilot.stop();
+}
+
+#[tauri::command]
+fn get_auto_pilot_log(state: State<AppState>) -> String {
+    state.auto_pilot.read_log_tail(80)
 }
 
 #[tauri::command]
@@ -514,9 +539,11 @@ pub fn run() {
             clear_quarantine_on_bundled_binaries(&res);
             let manager = Arc::new(BridgeManager::new(res.clone()));
             let tunnel = Arc::new(TunnelManager::new(res.clone()));
+            let auto_pilot = Arc::new(AutoPilotManager::new(res.clone()));
             app.manage(AppState {
                 manager: Arc::clone(&manager),
                 tunnel,
+                auto_pilot,
                 resource_dir: res,
             });
 
@@ -535,6 +562,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_bridge_status,
+            get_auto_pilot_status,
+            start_auto_pilot,
+            stop_auto_pilot,
+            get_auto_pilot_log,
             get_dependency_status,
             get_tunnel_status,
             get_app_config,
@@ -560,6 +591,7 @@ pub fn run() {
                 if let Some(state) = app_handle.try_state::<AppState>() {
                     state.tunnel.stop();
                     state.manager.stop();
+                    state.auto_pilot.stop();
                 }
             }
         });

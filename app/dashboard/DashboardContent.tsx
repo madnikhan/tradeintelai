@@ -53,8 +53,8 @@ const PerformanceTracker = dynamic(() => import('@/components/PerformanceTracker
   loading: tabPanelFallback,
   ssr: false,
 })
-const AccuracyDashboard = dynamic(
-  () => import('@/components/AccuracyDashboard').then((m) => ({ default: m.AccuracyDashboard })),
+const AutoPilotPanel = dynamic(
+  () => import('@/components/AutoPilotPanel').then((m) => ({ default: m.AutoPilotPanel })),
   { loading: tabPanelFallback, ssr: false }
 )
 
@@ -934,6 +934,11 @@ export default function DashboardContent() {
           </div>
         )}
 
+        {activeTab === 'autopilot' && (
+          <div className="max-w-7xl mx-auto">
+            <AutoPilotPanel trades={trades} account={account} />
+          </div>
+        )}
 
         {activeTab === 'settings' && (
           <div className="max-w-7xl mx-auto">

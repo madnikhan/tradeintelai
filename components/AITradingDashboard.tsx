@@ -14,6 +14,7 @@ import { SymbolPicker } from '@/components/trading/SymbolPicker';
 import { AccordionItem } from '@/components/ui/Accordion';
 import { toCompactSymbol } from '@/lib/trading-symbols';
 import { getChartVisionCache } from '@/lib/chart-vision-cache';
+import { getExecuteBlockedButtonLabel } from '@/lib/bridge-status';
 import { useBridgeStatus } from '@/hooks/useBridgeStatus';
 import { DataProvenancePanel } from '@/components/DataProvenancePanel';
 import type { ChartAnalysis } from '@/lib/ai-types';
@@ -46,6 +47,7 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
   const {
     canExecute: canExecuteToMt5,
     fixHint: executeBlockedHint,
+    state: bridgeConnectivityState,
     balance,
     balanceLoaded,
   } = useBridgeStatus();
@@ -1058,7 +1060,8 @@ export function AITradingDashboard({ onAnalysisChange, embedded = false, onAnaly
             {isExecuting
               ? '↻ Executing...'
               : accountBlocked
-              ? 'SELECT MT5 ACCOUNT TO EXECUTE'
+              ? getExecuteBlockedButtonLabel(bridgeConnectivityState) ||
+                'BRIDGE NOT READY'
               : executionBlocked
               ? 'EXECUTION BLOCKED — SEE GATE 4'
               : `Execute ${analysis.recommendation}`}

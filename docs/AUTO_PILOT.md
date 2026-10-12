@@ -39,9 +39,22 @@ Vercel is **not** in the execution hot path. Tunnel is optional for remote monit
 - Max open trades / trades per day
 - Demo-only lock until demo success goals met (`AUTO_PILOT_ALLOW_LIVE=1` to override on live)
 
+## Config sync
+
+Dashboard **Save** writes Firestore `users/{uid}/settings/autoPilot`. On daemon start (and every ~5 min) Auto Pilot pulls that config into `mt5-bridge/data/auto-pilot-config.json` using the **bridge pairing token** (or `AUTO_PILOT_API_TOKEN`). Pair the bridge first (`npm run bridge:pair`).
+
+## Accuracy / go-live
+
+Do **not** treat infra smoke audits as trade accuracy. Live Auto Pilot requires:
+
+1. Header **Ready** + demo balance loading
+2. Dry-run ON until **Demo Success Goals** / AccuracyDashboard gated expectancy pass
+3. Trade-mode analysis (trend/conservative) with SL/TP geometry checks
+4. Outcomes linked via `analysisId` on watchdog watches
+
 ## Config files
 
-- Daemon config: `mt5-bridge/data/auto-pilot-config.json`
+- Daemon config: `mt5-bridge/data/auto-pilot-config.json` (synced from Firestore)
 - Daemon status: `mt5-bridge/data/auto-pilot-status.json`
 - Logs: `%LOCALAPPDATA%\TradeIntel Bridge\auto-pilot.log` (Windows)
 
@@ -49,9 +62,9 @@ Vercel is **not** in the execution hot path. Tunnel is optional for remote monit
 
 | Variable | Purpose |
 |----------|---------|
-| `AUTO_PILOT_API_TOKEN` | Firebase ID token for license + cloud analyze |
+| `AUTO_PILOT_API_TOKEN` | Optional Firebase ID token; bridge credentials used if unset |
 | `TRADEINTEL_API_BASE` | Dashboard URL (default production Vercel) |
-| `AUTO_PILOT_SKIP_LICENSE` | Dev only — skip subscription check |
+| `AUTO_PILOT_SKIP_LICENSE` | Dev only — skip subscription check (not set by desktop release) |
 | `AUTO_PILOT_ALLOW_LIVE` | Allow live account when demo lock enabled |
 | `MT5_BRIDGE_PORT` | HTTP bridge port (default 8080) |
 

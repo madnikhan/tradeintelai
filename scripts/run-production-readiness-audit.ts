@@ -209,6 +209,10 @@ function writeReport(verdict: ReturnType<typeof deriveVerdict>): string {
   lines.push('');
   lines.push('## Executive verdict');
   lines.push('');
+  lines.push(
+    '> **Accuracy gate:** Infrastructure PASS ≠ trade accuracy. Go-live requires Demo Success Goals + AccuracyDashboard gated-engine outcomes (`assertCanGoLive` / `evaluateDemoReadiness`), not smoke audits alone.'
+  );
+  lines.push('');
   lines.push(`| Tier | Status |`);
   lines.push(`|------|--------|`);
   lines.push(`| Infrastructure | ${verdict.tier} |`);

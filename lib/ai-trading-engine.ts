@@ -2060,63 +2060,54 @@ export class AITradingEngine {
 
   private calculateATR(prices: PriceData[], period: number = 14): number {
     if (prices.length < 2) {
-      // Return default ATR for EURUSD if no data (60-80 pips = 0.006-0.008)
       return 0.007;
     }
-    
+
     const trueRanges: number[] = [];
-    
-    // CRITICAL FIX: Ensure we have proper OHLC data
-    // Start from index 1 to have previous close
     const startIndex = Math.max(1, prices.length - period - 1);
-    
+    const refClose =
+      prices[prices.length - 1]?.close ||
+      prices[Math.floor(prices.length / 2)]?.close ||
+      1;
+    const maxTr = Math.max(refClose * 0.2, 0.05);
+
     for (let i = startIndex; i < prices.length; i++) {
       const high = prices[i].high || prices[i].close;
       const low = prices[i].low || prices[i].close;
       const previousClose = i > 0 ? (prices[i - 1].close || prices[i].close) : prices[i].close;
-      
-      // Validate that we have meaningful price differences
+
       if (high <= 0 || low <= 0 || previousClose <= 0) {
-        continue; // Skip invalid data points
+        continue;
       }
-      
+
       const tr = Math.max(
         high - low,
         Math.abs(high - previousClose),
         Math.abs(low - previousClose)
       );
-      
-      // CRITICAL: Validate TR is reasonable (EURUSD should be 0.0001 to 0.02)
-      if (tr > 0 && tr < 0.1) {
+
+      if (tr > 0 && tr <= maxTr) {
         trueRanges.push(tr);
       }
     }
-    
+
     if (trueRanges.length === 0) {
-      // Return default ATR if calculation failed
-      return 0.007; // 70 pips default for EURUSD
+      return refClose > 50 ? refClose * 0.005 : 0.007;
     }
-    
+
     const atr = trueRanges.reduce((sum, tr) => sum + tr, 0) / trueRanges.length;
-    
-    // CRITICAL: Validate ATR is in reasonable range (pair-specific)
-    // Different pairs have different ATR ranges:
-    // - Standard pairs (EUR/USD, GBP/USD): 0.0006-0.010 (60-100 pips)
-    // - JPY pairs (USD/JPY): 0.20-0.50 (20-50 pips, but in different units)
-    // - Exotic pairs: Can vary widely
-    
-    // For now, we'll use a more lenient validation that works for most pairs
-    // Minimum ATR: 0.0005 (5 pips for standard pairs, but could be valid for low volatility)
-    // Maximum ATR: 0.02 (200 pips - very high volatility)
-    if (atr < 0.0005 || atr > 0.02) {
-      // Only warn if it's significantly off (not just slightly below threshold)
-      // 🔒 DISABLED: Changed to reduce warning noise
-      // if (atr < 0.0003 || atr > 0.02) {
-      //   console.warn(`⚠️ Calculated ATR ${atr.toFixed(5)} is outside reasonable range (0.0005-0.02). Using default 0.007 (70 pips).`);
-      // }
-      return 0.007; // Default to 70 pips for standard pairs
+
+    if (refClose > 50) {
+      if (atr < 0.5 || atr > refClose * 0.15) {
+        return Math.min(Math.max(refClose * 0.005, 5), 100);
+      }
+      return atr;
     }
-    
+
+    if (atr < 0.0003 || atr > 0.05) {
+      return 0.007;
+    }
+
     return atr;
   }
 

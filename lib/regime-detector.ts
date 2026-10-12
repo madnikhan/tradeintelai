@@ -92,13 +92,17 @@ export class RegimeDetector {
 
     const trueRanges: number[] = [];
     const lookback = Math.min(priceData.length, period + 1);
+    const refClose =
+      priceData[priceData.length - 1]?.close ||
+      priceData[Math.floor(priceData.length / 2)]?.close ||
+      1;
+    const maxTr = Math.max(refClose * 0.2, 0.05);
 
     for (let i = priceData.length - lookback + 1; i < priceData.length; i++) {
       const high = priceData[i].high || priceData[i].close;
       const low = priceData[i].low || priceData[i].close;
       const prevClose = i > 0 ? (priceData[i - 1].close || priceData[i].close) : priceData[i].close;
 
-      // Validate price data
       if (high <= 0 || low <= 0 || prevClose <= 0) {
         continue;
       }
@@ -108,31 +112,29 @@ export class RegimeDetector {
         Math.abs(high - prevClose),
         Math.abs(low - prevClose)
       );
-      
-      // Validate TR is reasonable
-      if (tr > 0 && tr < 0.1) {
+
+      if (tr > 0 && tr <= maxTr) {
         trueRanges.push(tr);
       }
     }
 
     if (trueRanges.length === 0) {
-      return 0.007; // Default ATR for EURUSD
+      return refClose > 50 ? refClose * 0.005 : 0.007;
     }
-    
+
     const atr = trueRanges.reduce((sum, tr) => sum + tr, 0) / trueRanges.length;
-    
-    // CRITICAL: Validate ATR is in reasonable range (pair-specific)
-    // More lenient validation - minimum 0.0005 (5 pips) instead of 0.001 (10 pips)
-    // This allows for low volatility periods without triggering warnings
-    if (atr < 0.0005 || atr > 0.02) {
-      // Only warn if significantly off
-      // 🔒 DISABLED: Changed to reduce warning noise
-      // if (atr < 0.0003 || atr > 0.02) {
-      //   console.warn(`⚠️ Regime detector: Calculated ATR ${atr.toFixed(5)} is outside reasonable range (0.0005-0.02). Using default 0.007 (70 pips).`);
-      // }
-      return 0.007; // Default to 70 pips
+
+    if (refClose > 50) {
+      if (atr < 0.5 || atr > refClose * 0.15) {
+        return Math.min(Math.max(refClose * 0.005, 5), 100);
+      }
+      return atr;
     }
-    
+
+    if (atr < 0.0003 || atr > 0.05) {
+      return 0.007;
+    }
+
     return atr;
   }
 

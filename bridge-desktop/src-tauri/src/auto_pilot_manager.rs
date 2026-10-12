@@ -107,7 +107,8 @@ impl AutoPilotManager {
         let _ = fs::create_dir_all(&data_dir);
         let config_path = data_dir.join("auto-pilot-config.json");
         if !config_path.exists() {
-            let default = r#"{"enabled":true,"preset":"trend","pairs":["EURUSD","GBPUSD"],"dryRun":true}"#;
+            // Matches dashboard DEFAULT: disabled until user enables + cloud sync
+            let default = r#"{"enabled":false,"preset":"trend","pairs":["EURUSD","GBPUSD"],"dryRun":true}"#;
             let _ = fs::write(&config_path, default);
         }
 
@@ -119,6 +120,11 @@ impl AutoPilotManager {
             status.config_path = Some(config_path.to_string_lossy().to_string());
         }
 
+        let dashboard_base = config
+            .dashboard_base_url
+            .clone()
+            .unwrap_or_else(|| "https://tradeintelai.vercel.app".to_string());
+
         let mut cmd = Command::new(&python);
         cmd.arg(&daemon)
             .current_dir(&bridge_root)
@@ -128,8 +134,19 @@ impl AutoPilotManager {
                 "AUTO_PILOT_CONFIG_PATH",
                 config_path.to_string_lossy().to_string(),
             )
-            .env("AUTO_PILOT_SKIP_LICENSE", "1")
+            .env("TRADEINTEL_API_BASE", &dashboard_base)
+            .env("TRADEINTEL_APP_URL", &dashboard_base)
             .stdout(Stdio::null());
+
+        // Dev-only license bypass — never force-enable in desktop release builds
+        if std::env::var("AUTO_PILOT_SKIP_LICENSE").is_ok() {
+            cmd.env("AUTO_PILOT_SKIP_LICENSE", "1");
+        }
+        if let Ok(token) = std::env::var("AUTO_PILOT_API_TOKEN") {
+            if !token.is_empty() {
+                cmd.env("AUTO_PILOT_API_TOKEN", token);
+            }
+        }
 
         if let Some(log_path) = autopilot_log_path() {
             if let Some(parent) = log_path.parent() {

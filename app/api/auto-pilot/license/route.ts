@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyApiAuth } from '@/lib/api-auth';
+import { verifyBridgeBearerToken } from '@/lib/bridge-token-auth';
 import { getUserSubscription } from '@/lib/stripe/subscription-store';
 import { canAccessApp } from '@/lib/subscription-access';
 import { createHmac, randomBytes } from 'crypto';
@@ -16,16 +17,26 @@ function signLicense(userId: string, expiresAt: number): string {
     .digest('hex');
 }
 
-/** Issue short-lived license token for Auto Pilot daemon (Firebase ID token auth). */
+/** Issue short-lived license token for Auto Pilot daemon (Firebase ID or bridge token). */
 export async function POST(request: NextRequest) {
   const auth = await verifyApiAuth(request);
-  if (!auth.authorized || !auth.userId) {
-    return NextResponse.json({ valid: false, error: auth.error ?? 'Unauthorized' }, { status: 401 });
+  let userId = auth.authorized ? auth.userId : null;
+  if (!userId) {
+    const bridge = await verifyBridgeBearerToken(
+      request.headers.get('authorization')
+    );
+    userId = bridge?.uid ?? null;
+  }
+  if (!userId) {
+    return NextResponse.json(
+      { valid: false, error: auth.error ?? 'Unauthorized' },
+      { status: 401 }
+    );
   }
 
   try {
-    const sub = await getUserSubscription(auth.userId);
-    const active = canAccessApp(sub.status, auth.userId);
+    const sub = await getUserSubscription(userId);
+    const active = canAccessApp(sub.status, userId);
     if (!active) {
       return NextResponse.json({
         valid: false,
@@ -34,15 +45,15 @@ export async function POST(request: NextRequest) {
     }
 
     const expiresAt = Math.floor(Date.now() / 1000) + LICENSE_TTL_SEC;
-    const signature = signLicense(auth.userId, expiresAt);
+    const signature = signLicense(userId, expiresAt);
     const nonce = randomBytes(8).toString('hex');
-    const token = `${auth.userId}.${expiresAt}.${nonce}.${signature}`;
+    const token = `${userId}.${expiresAt}.${nonce}.${signature}`;
 
     return NextResponse.json({
       valid: true,
       token,
       expiresAt,
-      userId: auth.userId,
+      userId,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'License check failed';

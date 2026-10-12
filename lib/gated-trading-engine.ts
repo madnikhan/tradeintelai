@@ -20,6 +20,10 @@ import { RegimeAnalysis } from './regime-detector';
 import { TradingHoursAnalysis } from './trading-hours';
 import { NewsImpact } from './economic-calendar';
 import { detectAssetType } from './constants';
+import {
+  MIN_GATED_EXECUTE_CONFIDENCE,
+  MIN_GATED_GATE4_COMPENSATED,
+} from './execution-thresholds';
 
 // ============================================================================
 // NEW INTERFACES
@@ -156,6 +160,8 @@ export interface GatedAnalyzeOptions {
   mode?: GatedAnalysisMode;
   /** Browser-only: render OHLC chart and run vision API per pair */
   generateChartFromOhlc?: boolean;
+  /** Allow OHLC rule-based structure when GPT/vision unavailable (Auto Pilot headless). */
+  allowOhlcStructureFallback?: boolean;
 }
 
 // ============================================================================
@@ -230,7 +236,9 @@ export class GatedTradingEngine {
 
     const priceActionSR = this.computeSupportResistanceFromOHLC();
 
-    if (!gptStructure && analysisMode === 'scan') {
+    const allowOhlcFallback =
+      analysisMode === 'scan' || options?.allowOhlcStructureFallback === true;
+    if (!gptStructure && allowOhlcFallback) {
       try {
         const { analyzeOhlcStructure } = await import('./ohlc-structure-analysis');
         const ohlcStructure = analyzeOhlcStructure(this.historicalData, priceActionSR);
@@ -1758,7 +1766,6 @@ export class GatedTradingEngine {
     permission: ExecutionPermission
   ): Promise<ExecutionPermission> {
     if (!permission.canExecute) return permission;
-    if (typeof window === 'undefined') return permission;
 
     try {
       const { getSymbolVerdict, shouldBlockExecution } = await import('./trade-verdict-service');
@@ -2146,9 +2153,10 @@ export class GatedTradingEngine {
     // Enforce cap - maximum 85% (increased from 65%) to allow strong signals through
     const confidence = Math.min(calculatedConfidence, Math.min(maxConfidence, 85));
     
-    // CONDITION 7: Confidence must be ≥ 45 (reduced from 50 to allow more trades)
-    // If strong compensating signals exist, allow even lower confidence
-    const minConfidenceThreshold = hasStrongCompensatingSignal ? 40 : 45;
+    // CONDITION 7: Align Gate 4 floor with Copilot Execute (50%), allow 45% only with strong compensators
+    const minConfidenceThreshold = hasStrongCompensatingSignal
+      ? MIN_GATED_GATE4_COMPENSATED
+      : MIN_GATED_EXECUTE_CONFIDENCE;
     if (confidence < minConfidenceThreshold) {
       blockedBy.push(`Confidence too low (${confidence}% < ${minConfidenceThreshold}%)`);
       blockedByRegimeOrConfidence = true;
@@ -2254,23 +2262,78 @@ export class GatedTradingEngine {
   
   /**
    * Get GPT's implied direction from structure (pure — does not mutate gptStructure).
+   * Continuation is NOT assumed bullish — infer from pattern labels (same as Gate 2).
    */
   private getGPTImpliedDirection(
     gptStructure: GPTStructureAnalysis,
     biasDirection: 'BULLISH' | 'BEARISH'
   ): { direction: 'BULLISH' | 'BEARISH' | 'NEUTRAL'; alignment: 'CONFIRMS' | 'CONTRADICTS' | 'NEUTRAL' } {
+    const patternTypes = (gptStructure.patterns || [])
+      .map((p) => (p.type || '').toLowerCase())
+      .join(' ');
+
+    const isAscendingTriangle =
+      patternTypes.includes('ascending') && patternTypes.includes('triangle');
+    const isDescendingTriangle =
+      patternTypes.includes('descending') && patternTypes.includes('triangle');
+    const isBullishFlag =
+      patternTypes.includes('bullish') && patternTypes.includes('flag');
+    const isBearishFlag =
+      patternTypes.includes('bearish') && patternTypes.includes('flag');
+    const isAscendingChannel = patternTypes.includes('ascending channel');
+    const isDescendingChannel = patternTypes.includes('descending channel');
+
     if (gptStructure.marketStructure === 'TREND_CONTINUATION') {
+      let direction: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
+      if (
+        isDescendingTriangle ||
+        isBearishFlag ||
+        isDescendingChannel ||
+        (patternTypes.includes('bearish') && !patternTypes.includes('bullish'))
+      ) {
+        direction = 'BEARISH';
+      } else if (
+        isAscendingTriangle ||
+        isBullishFlag ||
+        isAscendingChannel ||
+        (patternTypes.includes('bullish') && !patternTypes.includes('bearish'))
+      ) {
+        direction = 'BULLISH';
+      } else {
+        // Ambiguous continuation → follow existing bias (true continuation), not always bullish
+        direction = biasDirection;
+      }
       return {
-        direction: 'BULLISH',
-        alignment: biasDirection === 'BULLISH' ? 'CONFIRMS' : 'CONTRADICTS',
+        direction,
+        alignment: direction === biasDirection ? 'CONFIRMS' : 'CONTRADICTS',
       };
     }
+
     if (gptStructure.marketStructure === 'REVERSAL') {
+      const isBearishReversal =
+        patternTypes.includes('head and shoulders') ||
+        patternTypes.includes('head & shoulders') ||
+        (patternTypes.includes('head') &&
+          patternTypes.includes('shoulders') &&
+          !patternTypes.includes('inverse')) ||
+        patternTypes.includes('double top') ||
+        patternTypes.includes('triple top');
+      const isBullishReversal =
+        patternTypes.includes('inverse head') ||
+        patternTypes.includes('double bottom') ||
+        patternTypes.includes('triple bottom');
+
+      let direction: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
+      if (isBearishReversal && !isBullishReversal) direction = 'BEARISH';
+      else if (isBullishReversal && !isBearishReversal) direction = 'BULLISH';
+      else direction = biasDirection === 'BULLISH' ? 'BEARISH' : 'BULLISH';
+
       return {
-        direction: biasDirection === 'BULLISH' ? 'BEARISH' : 'BULLISH',
-        alignment: 'CONTRADICTS',
+        direction,
+        alignment: direction === biasDirection ? 'CONFIRMS' : 'CONTRADICTS',
       };
     }
+
     return { direction: 'NEUTRAL', alignment: 'NEUTRAL' };
   }
   
@@ -3058,46 +3121,63 @@ export class GatedTradingEngine {
     if (prices.length < 2) {
       return 0.007; // Default for EUR/USD
     }
-    
+
+    const refClose =
+      prices[prices.length - 1]?.close ||
+      prices[Math.floor(prices.length / 2)]?.close ||
+      1;
+    // Reject only absurd spikes relative to price — never hard-cap at 0.1 (breaks XAU)
+    const maxTr = Math.max(refClose * 0.2, 0.05);
+
     const trueRanges: number[] = [];
     const startIndex = Math.max(1, prices.length - period - 1);
-    
+
     for (let i = startIndex; i < prices.length; i++) {
       const high = prices[i].high || prices[i].close;
       const low = prices[i].low || prices[i].close;
       const previousClose = i > 0 ? (prices[i - 1].close || prices[i].close) : prices[i].close;
-      
+
       if (high <= 0 || low <= 0 || previousClose <= 0) {
         continue;
       }
-      
+
       const tr = Math.max(
         high - low,
         Math.abs(high - previousClose),
         Math.abs(low - previousClose)
       );
-      
-      if (tr > 0 && tr < 0.1) {
+
+      if (tr > 0 && tr <= maxTr) {
         trueRanges.push(tr);
       }
     }
-    
+
     if (trueRanges.length === 0) {
+      return refClose > 50 ? refClose * 0.005 : 0.007;
+    }
+
+    const atr = trueRanges.reduce((sum, tr) => sum + tr, 0) / trueRanges.length;
+
+    if (refClose > 50) {
+      // Metals / high-priced instruments
+      if (atr < 0.5 || atr > refClose * 0.15) {
+        return Math.min(Math.max(refClose * 0.005, 5), 100);
+      }
+      return atr;
+    }
+
+    if (refClose > 20 && refClose < 500) {
+      // Likely JPY pairs
+      if (atr < 0.02 || atr > 5) {
+        return 0.5;
+      }
+      return atr;
+    }
+
+    if (atr < 0.0003 || atr > 0.05) {
       return 0.007;
     }
-    
-    const atr = trueRanges.reduce((sum, tr) => sum + tr, 0) / trueRanges.length;
-    
-    // Pair-specific ATR validation (more lenient)
-    // Minimum: 0.0005 (5 pips) instead of 0.001 (10 pips) to allow low volatility periods
-    if (atr < 0.0005 || atr > 0.02) {
-      // Only use default if significantly off
-      if (atr < 0.0003 || atr > 0.02) {
-        return 0.007; // Default for standard pairs
-      }
-      // If slightly below threshold but reasonable, return as-is
-    }
-    
+
     return atr;
   }
 }

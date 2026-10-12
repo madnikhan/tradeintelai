@@ -1,7 +1,7 @@
 #!/usr/bin/env npx tsx
 /**
  * Headless gated analysis for Auto Pilot daemon.
- * Usage: npx tsx mt5-bridge/auto-trader-worker.ts EURUSD [--mode auto|scan] [--json]
+ * Usage: npx tsx mt5-bridge/auto-trader-worker.ts EURUSD [--mode trade|scan] [--vision|--no-vision] [--json]
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -31,22 +31,33 @@ function loadEnvLocal(): void {
   }
 }
 
-function parseArgs(): { symbol: string; mode: GatedAnalysisMode; json: boolean } {
+function parseArgs(): {
+  symbol: string;
+  mode: GatedAnalysisMode;
+  useVision: boolean;
+  json: boolean;
+} {
   const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
   const flags = new Set(process.argv.slice(2).filter((a) => a.startsWith('--')));
   const symbol = (args[0] || 'EURUSD').replace('/', '').toUpperCase();
   const modeFlag = process.argv.find((a) => a.startsWith('--mode='));
-  const mode = (modeFlag?.split('=')[1] as GatedAnalysisMode) || 'scan';
+  const mode = (modeFlag?.split('=')[1] as GatedAnalysisMode) || 'trade';
+  const useVision = flags.has('--vision') && !flags.has('--no-vision');
   const json = flags.has('--json') || !process.stdout.isTTY;
-  return { symbol, mode, json };
+  return { symbol, mode, useVision, json };
 }
 
 async function main(): Promise<void> {
   loadEnvLocal();
-  const { symbol, mode, json } = parseArgs();
+  const { symbol, mode, useVision, json } = parseArgs();
 
   try {
-    const analysis = await headlessGatedAdapter.analyzeMarket(symbol, [], { mode });
+    const { analysis, analysisId, entryPrice } =
+      await headlessGatedAdapter.analyzeWithMeta(symbol, [], {
+        mode,
+        useVision,
+        persist: true,
+      });
     const payload = {
       ok: true,
       symbol,
@@ -59,13 +70,17 @@ async function main(): Promise<void> {
       suggestedStopLoss: analysis.suggestedStopLoss,
       suggestedTakeProfit: analysis.suggestedTakeProfit,
       suggestedPositionSize: analysis.suggestedPositionSize,
+      entryPrice,
+      analysisId: analysisId || undefined,
       dataHealth: analysis.dataHealth,
     };
 
     if (json) {
       console.log(JSON.stringify(payload));
     } else {
-      console.log(`${symbol}: ${analysis.recommendation} conf=${analysis.confidence}% exec=${payload.executionPermitted}`);
+      console.log(
+        `${symbol}: ${analysis.recommendation} conf=${analysis.confidence}% exec=${payload.executionPermitted} vision=${useVision}`
+      );
       if (payload.executionBlockedBy.length) {
         console.log('  blocked:', payload.executionBlockedBy.join('; '));
       }

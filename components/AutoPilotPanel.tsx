@@ -80,7 +80,7 @@ export function AutoPilotPanel({ trades, account }: AutoPilotPanelProps) {
       }
       const data = await res.json();
       setConfig(data.config);
-      setMessage('Settings saved. Restart Auto Pilot in Bridge Desktop to apply.');
+      setMessage('Settings saved. Daemon re-syncs within ~5 min, or restart Auto Pilot in Bridge Desktop.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -142,8 +142,8 @@ export function AutoPilotPanel({ trades, account }: AutoPilotPanelProps) {
 
       {!status?.running && (
         <p className="text-sm text-secondary">
-          Open <strong>TradeIntel Bridge</strong> desktop app → Start Auto Pilot. Config below syncs to daemon via{' '}
-          <code className="text-cyan-400">mt5-bridge/data/auto-pilot-config.json</code> (export from Save).
+          Open <strong>TradeIntel Bridge</strong> → Start Auto Pilot. On start the daemon pulls these settings from
+          Firestore (requires bridge pairing). Keep dry run ON until demo readiness goals pass.
         </p>
       )}
 

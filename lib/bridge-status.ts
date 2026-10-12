@@ -118,6 +118,28 @@ const STATE_META: Record<
   },
 };
 
+/** Short Execute-button label when `canExecute` is false (avoids misleading "SELECT MT5 ACCOUNT"). */
+export function getExecuteBlockedButtonLabel(state: BridgeConnectivityState): string {
+  switch (state) {
+    case 'no_account':
+      return 'SELECT MT5 ACCOUNT TO EXECUTE';
+    case 'tunnel_down':
+      return 'BRIDGE OFFLINE — COMPLETE SETUP';
+    case 'unknown':
+      return 'BRIDGE SETUP NEEDED — PAIR IN SETUP';
+    case 'ea_disconnected':
+      return 'ATTACH MT5 EA TO EXECUTE';
+    case 'tunnel_ok_unpaired':
+      return 'PAIR BRIDGE TO EXECUTE';
+    case 'balance_pending':
+      return 'WAITING FOR MT5 BALANCE';
+    case 'checking':
+      return 'CHECKING BRIDGE…';
+    case 'ready':
+      return '';
+  }
+}
+
 export function deriveBridgeStatus(inputs: BridgeStatusInputs): BridgeStatusSnapshot {
   const {
     http,

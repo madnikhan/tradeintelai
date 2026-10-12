@@ -13,6 +13,12 @@ import { syncAccountFromBridge } from '@/lib/bridge-account-sync';
 import { fetchBridgeCredentials } from '@/lib/bridge-watch-client';
 import { formatBridgeNetworkError, getBridgeBaseUrl } from '@/config/bridge-config';
 import { fetchBridgeStatusSnapshot } from '@/lib/bridge-status';
+import {
+  MIN_GATED_EXECUTE_CONFIDENCE,
+  MIN_LEGACY_EXECUTE_CONFIDENCE,
+  MIN_LEGACY_EXECUTE_SCORE,
+} from '@/lib/execution-thresholds';
+import { validateTradeGeometry } from '@/lib/trade-geometry';
 import type { ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
 
 export interface ExecuteGatedTradeParams {
@@ -37,7 +43,8 @@ function parseEntryPrice(analysis: ExtendedMarketAnalysis): number {
   );
   const parsed = priceLine?.match(/([\d.]+)/);
   if (parsed) return parseFloat(parsed[1]);
-  return analysis.suggestedStopLoss;
+  // Never fall back to SL as entry — return 0 so geometry/validation can reject
+  return 0;
 }
 
 export function validateGatedExecution(
@@ -51,28 +58,26 @@ export function validateGatedExecution(
         error: `Execution blocked by Gate 4. ${blockers || analysis.gateStatus.executionReason || 'Gate conditions not met.'}`,
       };
     }
-    if (analysis.confidence < 50) {
+    if (analysis.confidence < MIN_GATED_EXECUTE_CONFIDENCE) {
       return {
         ok: false,
-        error: `Confidence too low (${analysis.confidence}%, minimum 50%).`,
+        error: `Confidence too low (${analysis.confidence}%, minimum ${MIN_GATED_EXECUTE_CONFIDENCE}%).`,
       };
     }
     if (analysis.recommendation === 'HOLD') {
       return { ok: false, error: 'AI recommends HOLD — execution blocked.' };
     }
   } else {
-    const MIN_SCORE = 65;
-    const MIN_CONFIDENCE = 55;
-    if (analysis.overallScore < MIN_SCORE) {
+    if (analysis.overallScore < MIN_LEGACY_EXECUTE_SCORE) {
       return {
         ok: false,
-        error: `Signal too weak (${analysis.overallScore}/100, minimum ${MIN_SCORE}).`,
+        error: `Signal too weak (${analysis.overallScore}/100, minimum ${MIN_LEGACY_EXECUTE_SCORE}).`,
       };
     }
-    if (analysis.confidence < MIN_CONFIDENCE) {
+    if (analysis.confidence < MIN_LEGACY_EXECUTE_CONFIDENCE) {
       return {
         ok: false,
-        error: `Confidence too low (${analysis.confidence}%, minimum ${MIN_CONFIDENCE}%).`,
+        error: `Confidence too low (${analysis.confidence}%, minimum ${MIN_LEGACY_EXECUTE_CONFIDENCE}%).`,
       };
     }
     if (analysis.recommendation === 'HOLD') {
@@ -85,6 +90,20 @@ export function validateGatedExecution(
   }
   if (!analysis.suggestedStopLoss || !analysis.suggestedTakeProfit) {
     return { ok: false, error: 'Invalid stop loss or take profit' };
+  }
+
+  const side = analysis.recommendation.includes('BUY') ? 'BUY' : 'SELL';
+  const entry = parseEntryPrice(analysis);
+  if (entry > 0) {
+    const geom = validateTradeGeometry({
+      side,
+      entry,
+      stopLoss: analysis.suggestedStopLoss,
+      takeProfit: analysis.suggestedTakeProfit,
+    });
+    if (!geom.ok) {
+      return { ok: false, error: geom.error };
+    }
   }
 
   return { ok: true };

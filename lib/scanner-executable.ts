@@ -5,7 +5,9 @@
 
 import type { ExtendedMarketAnalysis } from '@/lib/gated-engine-adapter';
 
-export const SCANNER_MIN_CONFIDENCE_GATE = 50;
+import { MIN_GATED_EXECUTE_CONFIDENCE } from '@/lib/execution-thresholds';
+
+export const SCANNER_MIN_CONFIDENCE_GATE = MIN_GATED_EXECUTE_CONFIDENCE;
 export const SCANNER_MIN_SCORE_LEGACY = 65;
 export const SCANNER_MIN_CONFIDENCE_LEGACY = 55;
 

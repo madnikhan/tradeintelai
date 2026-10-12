@@ -12,6 +12,7 @@ import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { BridgeStatusBar } from '@/components/BridgeStatusBar';
 import { useBridgeStatus } from '@/hooks/useBridgeStatus';
+import { getExecuteBlockedButtonLabel } from '@/lib/bridge-status';
 import { TradeVerdictBanner } from '@/components/TradeVerdictBanner';
 import {
   getAutoScanEnabled,
@@ -122,6 +123,7 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
     activeAccountLogin: activeMt5Login,
     canExecute: canExecuteToMt5,
     fixHint: executeBlockedHint,
+    state: bridgeConnectivityState,
   } = useBridgeStatus();
 
   // Executable opportunities: same rules as Trade tab validateGatedExecution (gate path)
@@ -1065,7 +1067,8 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
                 {quickExecuting === bestOpportunity.symbol.replace('/', '')
                   ? 'Executing…'
                   : !canExecuteToMt5
-                    ? 'Select MT5 account to execute'
+                    ? getExecuteBlockedButtonLabel(bridgeConnectivityState) ||
+                      'Bridge not ready'
                     : `Quick execute ${bestOpportunity.recommendation}`}
               </button>
             )}
@@ -1074,7 +1077,7 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
           <div className="mt-4 pt-4 border-t border-[#1e2738]">
             <p className="text-xs text-gray-500 mb-2">⚠️ Remember: This is the BEST opportunity, but still:</p>
             <ul className="text-xs text-gray-400 space-y-1">
-              <li>• Only risk 2% of your account ($1.91 on $95.55 balance)</li>
+              <li>• Only risk 1–2% of your account per trade</li>
               <li>• Ensure stop loss and take profit are properly set</li>
               <li>• Trade objectively, not emotionally</li>
               <li>• This is NOT about recovering losses - it&apos;s about the next quality trade</li>
@@ -1233,7 +1236,9 @@ export function OpportunityScanner({ onNavigateToTrade }: OpportunityScannerProp
                               ? '…'
                               : canExecuteToMt5
                                 ? 'Execute'
-                                : 'No account'}
+                                : getExecuteBlockedButtonLabel(
+                                    bridgeConnectivityState
+                                  ) || 'Bridge not ready'}
                           </button>
                         )}
                       </td>
